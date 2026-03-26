@@ -1,0 +1,127 @@
+import { jstNow } from './utils.js';
+
+export interface DbEngagementGate {
+  id: string;
+  x_account_id: string;
+  post_id: string;
+  trigger_type: string;
+  action_type: string;
+  template: string;
+  link: string | null;
+  is_active: number;
+  line_harness_url: string | null;
+  line_harness_api_key: string | null;
+  line_harness_tag: string | null;
+  line_harness_scenario_id: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface DbDelivery {
+  id: string;
+  gate_id: string;
+  x_user_id: string;
+  x_username: string | null;
+  delivered_post_id: string | null;
+  status: string;
+  created_at: string;
+}
+
+export interface CreateGateInput {
+  xAccountId: string;
+  postId: string;
+  triggerType: string;
+  actionType: string;
+  template: string;
+  link?: string;
+  lineHarnessUrl?: string;
+  lineHarnessApiKey?: string;
+  lineHarnessTag?: string;
+  lineHarnessScenarioId?: string;
+}
+
+export async function createEngagementGate(db: D1Database, input: CreateGateInput): Promise<DbEngagementGate> {
+  const id = crypto.randomUUID();
+  const now = jstNow();
+  const result = await db
+    .prepare(`
+      INSERT INTO engagement_gates (id, x_account_id, post_id, trigger_type, action_type, template, link, line_harness_url, line_harness_api_key, line_harness_tag, line_harness_scenario_id, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      RETURNING *
+    `)
+    .bind(id, input.xAccountId, input.postId, input.triggerType, input.actionType, input.template, input.link ?? null, input.lineHarnessUrl ?? null, input.lineHarnessApiKey ?? null, input.lineHarnessTag ?? null, input.lineHarnessScenarioId ?? null, now, now)
+    .first<DbEngagementGate>();
+  return result!;
+}
+
+export async function getEngagementGates(db: D1Database, opts: { activeOnly?: boolean } = {}): Promise<DbEngagementGate[]> {
+  const where = opts.activeOnly ? 'WHERE is_active = 1' : '';
+  const result = await db
+    .prepare(`SELECT * FROM engagement_gates ${where} ORDER BY created_at DESC`)
+    .all<DbEngagementGate>();
+  return result.results;
+}
+
+export async function getEngagementGateById(db: D1Database, id: string): Promise<DbEngagementGate | null> {
+  return db.prepare('SELECT * FROM engagement_gates WHERE id = ?').bind(id).first<DbEngagementGate>();
+}
+
+export async function updateEngagementGate(db: D1Database, id: string, updates: Partial<CreateGateInput & { isActive: boolean }>): Promise<DbEngagementGate | null> {
+  const existing = await getEngagementGateById(db, id);
+  if (!existing) return null;
+  const now = jstNow();
+  const result = await db
+    .prepare(`
+      UPDATE engagement_gates SET
+        post_id = ?, trigger_type = ?, action_type = ?, template = ?, link = ?,
+        is_active = ?, line_harness_url = ?, line_harness_api_key = ?, line_harness_tag = ?, line_harness_scenario_id = ?,
+        updated_at = ?
+      WHERE id = ? RETURNING *
+    `)
+    .bind(
+      updates.postId ?? existing.post_id,
+      updates.triggerType ?? existing.trigger_type,
+      updates.actionType ?? existing.action_type,
+      updates.template ?? existing.template,
+      updates.link ?? existing.link,
+      updates.isActive !== undefined ? (updates.isActive ? 1 : 0) : existing.is_active,
+      updates.lineHarnessUrl ?? existing.line_harness_url,
+      updates.lineHarnessApiKey ?? existing.line_harness_api_key,
+      updates.lineHarnessTag ?? existing.line_harness_tag,
+      updates.lineHarnessScenarioId ?? existing.line_harness_scenario_id,
+      now, id,
+    )
+    .first<DbEngagementGate>();
+  return result;
+}
+
+export async function deleteEngagementGate(db: D1Database, id: string): Promise<void> {
+  await db.prepare('DELETE FROM engagement_gates WHERE id = ?').bind(id).run();
+}
+
+export async function getDeliveries(db: D1Database, gateId: string, opts: { limit?: number; offset?: number } = {}): Promise<DbDelivery[]> {
+  const { limit = 50, offset = 0 } = opts;
+  const result = await db
+    .prepare('SELECT * FROM engagement_gate_deliveries WHERE gate_id = ? ORDER BY created_at DESC LIMIT ? OFFSET ?')
+    .bind(gateId, limit, offset)
+    .all<DbDelivery>();
+  return result.results;
+}
+
+export async function getDeliveredUserIds(db: D1Database, gateId: string): Promise<Set<string>> {
+  const result = await db
+    .prepare('SELECT x_user_id FROM engagement_gate_deliveries WHERE gate_id = ?')
+    .bind(gateId)
+    .all<{ x_user_id: string }>();
+  return new Set(result.results.map((r) => r.x_user_id));
+}
+
+export async function createDelivery(db: D1Database, gateId: string, xUserId: string, xUsername: string | null, deliveredPostId: string | null, status: string): Promise<DbDelivery> {
+  const id = crypto.randomUUID();
+  const now = jstNow();
+  const result = await db
+    .prepare('INSERT INTO engagement_gate_deliveries (id, gate_id, x_user_id, x_username, delivered_post_id, status, created_at) VALUES (?, ?, ?, ?, ?, ?, ?) RETURNING *')
+    .bind(id, gateId, xUserId, xUsername, deliveredPostId, status, now)
+    .first<DbDelivery>();
+  return result!;
+}

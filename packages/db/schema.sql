@@ -1,0 +1,113 @@
+-- X Harness OSS — D1 Schema
+-- Mirrors LINE Harness architecture for The Harness unification
+
+-- X Accounts (1 deploy = 1 primary, but supports multi)
+CREATE TABLE IF NOT EXISTS x_accounts (
+  id TEXT PRIMARY KEY,
+  x_user_id TEXT UNIQUE NOT NULL,
+  username TEXT NOT NULL,
+  display_name TEXT,
+  access_token TEXT NOT NULL,
+  refresh_token TEXT,
+  is_active INTEGER DEFAULT 1,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+
+-- Engagement Gates (secret reply — killer feature)
+CREATE TABLE IF NOT EXISTS engagement_gates (
+  id TEXT PRIMARY KEY,
+  x_account_id TEXT NOT NULL,
+  post_id TEXT NOT NULL,
+  trigger_type TEXT NOT NULL CHECK (trigger_type IN ('like', 'repost', 'reply', 'follow')),
+  action_type TEXT NOT NULL CHECK (action_type IN ('mention_post', 'dm')),
+  template TEXT NOT NULL,
+  link TEXT,
+  is_active INTEGER DEFAULT 1,
+  line_harness_url TEXT,
+  line_harness_api_key TEXT,
+  line_harness_tag TEXT,
+  line_harness_scenario_id TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_engagement_gates_active ON engagement_gates(is_active);
+
+-- Engagement Gate Deliveries (dedup tracking)
+CREATE TABLE IF NOT EXISTS engagement_gate_deliveries (
+  id TEXT PRIMARY KEY,
+  gate_id TEXT NOT NULL REFERENCES engagement_gates(id) ON DELETE CASCADE,
+  x_user_id TEXT NOT NULL,
+  x_username TEXT,
+  delivered_post_id TEXT,
+  status TEXT DEFAULT 'pending' CHECK (status IN ('delivered', 'failed', 'pending')),
+  created_at TEXT NOT NULL,
+  UNIQUE(gate_id, x_user_id)
+);
+CREATE INDEX IF NOT EXISTS idx_deliveries_gate_id ON engagement_gate_deliveries(gate_id);
+
+-- Followers
+CREATE TABLE IF NOT EXISTS followers (
+  id TEXT PRIMARY KEY,
+  x_account_id TEXT NOT NULL,
+  x_user_id TEXT NOT NULL,
+  username TEXT,
+  display_name TEXT,
+  profile_image_url TEXT,
+  follower_count INTEGER,
+  following_count INTEGER,
+  is_following INTEGER DEFAULT 1,
+  is_followed INTEGER DEFAULT 0,
+  user_id TEXT,
+  metadata TEXT DEFAULT '{}',
+  first_seen_at TEXT NOT NULL,
+  unfollowed_at TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  UNIQUE(x_account_id, x_user_id)
+);
+CREATE INDEX IF NOT EXISTS idx_followers_x_user_id ON followers(x_user_id);
+CREATE INDEX IF NOT EXISTS idx_followers_user_id ON followers(user_id);
+
+-- Tags
+CREATE TABLE IF NOT EXISTS tags (
+  id TEXT PRIMARY KEY,
+  x_account_id TEXT NOT NULL,
+  name TEXT NOT NULL,
+  color TEXT DEFAULT '#3B82F6',
+  created_at TEXT NOT NULL,
+  UNIQUE(x_account_id, name)
+);
+
+-- Follower <-> Tag
+CREATE TABLE IF NOT EXISTS follower_tags (
+  follower_id TEXT NOT NULL REFERENCES followers(id) ON DELETE CASCADE,
+  tag_id TEXT NOT NULL REFERENCES tags(id) ON DELETE CASCADE,
+  created_at TEXT NOT NULL,
+  PRIMARY KEY (follower_id, tag_id)
+);
+CREATE INDEX IF NOT EXISTS idx_follower_tags_tag_id ON follower_tags(tag_id);
+
+-- Scheduled Posts
+CREATE TABLE IF NOT EXISTS scheduled_posts (
+  id TEXT PRIMARY KEY,
+  x_account_id TEXT NOT NULL,
+  text TEXT NOT NULL,
+  media_ids TEXT,
+  scheduled_at TEXT NOT NULL,
+  status TEXT DEFAULT 'scheduled' CHECK (status IN ('scheduled', 'posted', 'failed')),
+  posted_tweet_id TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_scheduled_posts_status ON scheduled_posts(status);
+
+-- Users (UUID — The Harness unification)
+CREATE TABLE IF NOT EXISTS users (
+  id TEXT PRIMARY KEY,
+  email TEXT,
+  phone TEXT,
+  metadata TEXT DEFAULT '{}',
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
