@@ -138,7 +138,15 @@ export async function updateDeliveryStatus(db: D1Database, id: string, status: s
     .run();
 }
 
-export async function resolveToken(db: D1Database, token: string): Promise<{ xUserId: string; xUsername: string | null; gateId: string } | null> {
+export interface ResolvedToken {
+  xUserId: string;
+  xUsername: string | null;
+  gateId: string;
+  tag: string | null;
+  scenarioId: string | null;
+}
+
+export async function resolveToken(db: D1Database, token: string): Promise<ResolvedToken | null> {
   // Atomically mark the token as consumed and return its data in a single statement.
   // If consumed_at is already set (or token doesn't exist), the UPDATE matches zero rows
   // and we return null — preventing double-redemption races.
@@ -148,5 +156,18 @@ export async function resolveToken(db: D1Database, token: string): Promise<{ xUs
     .bind(now, token)
     .first<{ x_user_id: string; x_username: string | null; gate_id: string }>();
   if (!row) return null;
-  return { xUserId: row.x_user_id, xUsername: row.x_username, gateId: row.gate_id };
+
+  // Fetch the gate's LINE Harness config (tag + scenario)
+  const gate = await db
+    .prepare('SELECT line_harness_tag, line_harness_scenario_id FROM engagement_gates WHERE id = ?')
+    .bind(row.gate_id)
+    .first<{ line_harness_tag: string | null; line_harness_scenario_id: string | null }>();
+
+  return {
+    xUserId: row.x_user_id,
+    xUsername: row.x_username,
+    gateId: row.gate_id,
+    tag: gate?.line_harness_tag ?? null,
+    scenarioId: gate?.line_harness_scenario_id ?? null,
+  };
 }
