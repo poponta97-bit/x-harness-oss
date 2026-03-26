@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
 import {
   createEngagementGate, getEngagementGates, getEngagementGateById,
-  updateEngagementGate, deleteEngagementGate, getDeliveries,
+  updateEngagementGate, deleteEngagementGate, getDeliveries, resolveToken,
 } from '@x-harness/db';
 import type { Env } from '../index.js';
 
@@ -75,6 +75,13 @@ engagementGates.get('/api/engagement-gates/:id/deliveries', async (c) => {
   const offset = Number(c.req.query('offset') ?? '0');
   const deliveries = await getDeliveries(c.env.DB, c.req.param('id'), { limit, offset });
   return c.json({ success: true, data: deliveries.map(serializeDelivery) });
+});
+
+// Public endpoint — no auth required (token is the secret)
+engagementGates.get('/api/tokens/:token/resolve', async (c) => {
+  const result = await resolveToken(c.env.DB, c.req.param('token'));
+  if (!result) return c.json({ success: false, error: 'Token invalid or already consumed' }, 404);
+  return c.json({ success: true, data: result });
 });
 
 export { engagementGates };

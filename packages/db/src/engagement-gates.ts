@@ -24,6 +24,8 @@ export interface DbDelivery {
   x_username: string | null;
   delivered_post_id: string | null;
   status: string;
+  token: string | null;
+  consumed_at: string | null;
   created_at: string;
 }
 
@@ -109,8 +111,10 @@ export async function getDeliveries(db: D1Database, gateId: string, opts: { limi
 }
 
 export async function getDeliveredUserIds(db: D1Database, gateId: string): Promise<Set<string>> {
+  // Only treat 'delivered' and 'pending' rows as already handled.
+  // 'failed' rows are retryable — do not suppress future delivery attempts.
   const result = await db
-    .prepare('SELECT x_user_id FROM engagement_gate_deliveries WHERE gate_id = ?')
+    .prepare("SELECT x_user_id FROM engagement_gate_deliveries WHERE gate_id = ? AND status IN ('delivered', 'pending')")
     .bind(gateId)
     .all<{ x_user_id: string }>();
   return new Set(result.results.map((r) => r.x_user_id));
@@ -118,10 +122,31 @@ export async function getDeliveredUserIds(db: D1Database, gateId: string): Promi
 
 export async function createDelivery(db: D1Database, gateId: string, xUserId: string, xUsername: string | null, deliveredPostId: string | null, status: string): Promise<DbDelivery> {
   const id = crypto.randomUUID();
+  const token = crypto.randomUUID().replace(/-/g, '').slice(0, 16);
   const now = jstNow();
   const result = await db
-    .prepare('INSERT INTO engagement_gate_deliveries (id, gate_id, x_user_id, x_username, delivered_post_id, status, created_at) VALUES (?, ?, ?, ?, ?, ?, ?) RETURNING *')
-    .bind(id, gateId, xUserId, xUsername, deliveredPostId, status, now)
+    .prepare('INSERT INTO engagement_gate_deliveries (id, gate_id, x_user_id, x_username, delivered_post_id, status, token, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?) RETURNING *')
+    .bind(id, gateId, xUserId, xUsername, deliveredPostId, status, token, now)
     .first<DbDelivery>();
   return result!;
+}
+
+export async function updateDeliveryStatus(db: D1Database, id: string, status: string, deliveredPostId?: string): Promise<void> {
+  await db
+    .prepare('UPDATE engagement_gate_deliveries SET status = ?, delivered_post_id = ? WHERE id = ?')
+    .bind(status, deliveredPostId ?? null, id)
+    .run();
+}
+
+export async function resolveToken(db: D1Database, token: string): Promise<{ xUserId: string; xUsername: string | null; gateId: string } | null> {
+  // Atomically mark the token as consumed and return its data in a single statement.
+  // If consumed_at is already set (or token doesn't exist), the UPDATE matches zero rows
+  // and we return null — preventing double-redemption races.
+  const now = jstNow();
+  const row = await db
+    .prepare('UPDATE engagement_gate_deliveries SET consumed_at = ? WHERE token = ? AND consumed_at IS NULL RETURNING x_user_id, x_username, gate_id')
+    .bind(now, token)
+    .first<{ x_user_id: string; x_username: string | null; gate_id: string }>();
+  if (!row) return null;
+  return { xUserId: row.x_user_id, xUsername: row.x_username, gateId: row.gate_id };
 }

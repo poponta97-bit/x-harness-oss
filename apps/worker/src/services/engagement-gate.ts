@@ -1,6 +1,6 @@
 import { XClient, XApiRateLimitError } from '@x-harness/x-sdk';
 import {
-  getEngagementGates, getDeliveredUserIds, createDelivery,
+  getEngagementGates, getDeliveredUserIds, createDelivery, updateDeliveryStatus,
   upsertFollower,
 } from '@x-harness/db';
 import type { DbEngagementGate } from '@x-harness/db';
@@ -53,17 +53,20 @@ async function processOneGate(
 
     await addJitter(30_000, 180_000);
 
-    // Apply stealth variation before URL substitution to avoid corrupting links
-    let text = varyTemplate(gate.template.replace('{username}', user.username));
-    if (gate.link) {
-      // Append X username as ref param for X-LINE account linking
-      const personalizedLink = appendRef(gate.link, `x:${user.username}`);
-      text = text.replace('{link}', personalizedLink);
-    }
+    // Create pending delivery first to get the token
+    const delivery = await createDelivery(db, gate.id, user.id, user.username, null, 'pending');
 
     try {
+      // Apply stealth variation before URL substitution to avoid corrupting links
+      let text = varyTemplate(gate.template.replace('{username}', user.username));
+      if (gate.link) {
+        // Build link with one-time token for X-LINE account linking
+        const personalizedLink = appendRef(gate.link, `xh:${delivery.token}`);
+        text = text.replace('{link}', personalizedLink);
+      }
+
       const tweet = await xClient.createTweet({ text: `@${user.username} ${text}` });
-      await createDelivery(db, gate.id, user.id, user.username, tweet.id, 'delivered');
+      await updateDeliveryStatus(db, delivery.id, 'delivered', tweet.id);
       incrementRateLimit(gate.x_account_id);
 
       await upsertFollower(db, {
@@ -80,9 +83,13 @@ async function processOneGate(
         triggerLineHarness(gate.line_harness_url, gate.line_harness_api_key, gate.line_harness_tag, gate.line_harness_scenario_id, user.username).catch(() => {});
       }
     } catch (err) {
-      if (err instanceof XApiRateLimitError) throw err;
+      if (err instanceof XApiRateLimitError) {
+        // Mark pending delivery as failed before re-throwing to prevent permanent suppression
+        await updateDeliveryStatus(db, delivery.id, 'failed').catch(() => {});
+        throw err;
+      }
       console.error(`Failed to deliver to @${user.username}:`, err);
-      await createDelivery(db, gate.id, user.id, user.username, null, 'failed');
+      await updateDeliveryStatus(db, delivery.id, 'failed');
     }
   }
 }

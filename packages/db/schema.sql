@@ -41,6 +41,8 @@ CREATE TABLE IF NOT EXISTS engagement_gate_deliveries (
   x_username TEXT,
   delivered_post_id TEXT,
   status TEXT DEFAULT 'pending' CHECK (status IN ('delivered', 'failed', 'pending')),
+  token TEXT,
+  consumed_at TEXT,
   created_at TEXT NOT NULL,
   UNIQUE(gate_id, x_user_id)
 );
@@ -101,6 +103,15 @@ CREATE TABLE IF NOT EXISTS scheduled_posts (
   updated_at TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_scheduled_posts_status ON scheduled_posts(status);
+
+-- Migration: add token/consumed_at columns to engagement_gate_deliveries (idempotent)
+-- Required for environments created before this migration was added.
+-- ALTER TABLE ADD COLUMN cannot include UNIQUE in SQLite/D1;
+-- uniqueness is enforced via the separate CREATE UNIQUE INDEX below.
+ALTER TABLE engagement_gate_deliveries ADD COLUMN IF NOT EXISTS token TEXT;
+ALTER TABLE engagement_gate_deliveries ADD COLUMN IF NOT EXISTS consumed_at TEXT;
+-- Token must be unique; create the index after the columns exist.
+CREATE UNIQUE INDEX IF NOT EXISTS idx_deliveries_token ON engagement_gate_deliveries(token);
 
 -- Users (UUID — The Harness unification)
 CREATE TABLE IF NOT EXISTS users (

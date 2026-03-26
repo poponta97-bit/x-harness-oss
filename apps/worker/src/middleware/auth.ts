@@ -3,7 +3,7 @@ import type { Env } from '../index.js';
 
 export async function authMiddleware(c: Context<Env>, next: Next): Promise<Response | void> {
   const path = new URL(c.req.url).pathname;
-  if (path === '/api/health') {
+  if (path === '/api/health' || path.startsWith('/api/tokens/')) {
     return next();
   }
 
