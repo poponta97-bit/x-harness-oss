@@ -55,7 +55,11 @@ async function processOneGate(
 
     // Apply stealth variation before URL substitution to avoid corrupting links
     let text = varyTemplate(gate.template.replace('{username}', user.username));
-    if (gate.link) text = text.replace('{link}', gate.link);
+    if (gate.link) {
+      // Append X username as ref param for X-LINE account linking
+      const personalizedLink = appendRef(gate.link, `x:${user.username}`);
+      text = text.replace('{link}', personalizedLink);
+    }
 
     try {
       const tweet = await xClient.createTweet({ text: `@${user.username} ${text}` });
@@ -80,6 +84,18 @@ async function processOneGate(
       console.error(`Failed to deliver to @${user.username}:`, err);
       await createDelivery(db, gate.id, user.id, user.username, null, 'failed');
     }
+  }
+}
+
+function appendRef(link: string, ref: string): string {
+  try {
+    const url = new URL(link);
+    url.searchParams.set('ref', ref);
+    return url.toString();
+  } catch {
+    // If link isn't a valid URL, append manually
+    const sep = link.includes('?') ? '&' : '?';
+    return `${link}${sep}ref=${encodeURIComponent(ref)}`;
   }
 }
 
