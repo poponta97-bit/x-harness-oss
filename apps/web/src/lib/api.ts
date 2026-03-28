@@ -2,7 +2,7 @@ const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8787';
 
 function getApiKey(): string {
   if (typeof window === 'undefined') return '';
-  return localStorage.getItem('xh_api_key') || process.env.NEXT_PUBLIC_API_KEY || '';
+  return localStorage.getItem('xh_api_key') || '';
 }
 
 async function fetchApi<T>(path: string, options?: RequestInit): Promise<T> {
