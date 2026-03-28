@@ -1,4 +1,4 @@
-import { XClient } from '@x-harness/x-sdk';
+import { XClient, XApiRateLimitError } from '@x-harness/x-sdk';
 import { getDueEnrollments, getStepMessages, advanceEnrollment, getStepSequenceById } from '@x-harness/db';
 import type { DbStepEnrollment } from '@x-harness/db';
 import { varyTemplate } from './stealth.js';
@@ -9,6 +9,10 @@ export async function processStepSequences(db: D1Database, buildXClient: (accoun
     try {
       await processOneEnrollment(db, enrollment, buildXClient);
     } catch (err) {
+      if (err instanceof XApiRateLimitError) {
+        console.error('Rate limited — stopping step sequence processing');
+        return;
+      }
       console.error(`Error processing enrollment ${enrollment.id}:`, err);
     }
   }
@@ -46,7 +50,16 @@ async function processOneEnrollment(
   }
 
   const xClient = await buildXClient(sequence.x_account_id);
-  if (!xClient) return;
+  if (!xClient) {
+    console.error(`No XClient for account ${sequence.x_account_id}, skipping enrollment ${enrollment.id}`);
+    return;
+  }
+
+  // Guard against null username — skip mention delivery to avoid posting "@null"
+  if (nextStep.action_type !== 'dm' && !enrollment.x_username) {
+    console.error(`Enrollment ${enrollment.id} has no username, cannot send mention`);
+    return;
+  }
 
   let text = varyTemplate(nextStep.template.replace('{username}', enrollment.x_username ?? ''));
   if (nextStep.link) text = text.replace('{link}', nextStep.link);
