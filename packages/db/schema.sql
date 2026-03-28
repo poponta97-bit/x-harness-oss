@@ -148,7 +148,7 @@ CREATE INDEX IF NOT EXISTS idx_step_messages_sequence ON step_messages(sequence_
 
 CREATE TABLE IF NOT EXISTS step_enrollments (
   id TEXT PRIMARY KEY,
-  sequence_id TEXT NOT NULL REFERENCES step_sequences(id),
+  sequence_id TEXT NOT NULL REFERENCES step_sequences(id) ON DELETE CASCADE,
   x_user_id TEXT NOT NULL,
   x_username TEXT,
   current_step INTEGER DEFAULT 0,
