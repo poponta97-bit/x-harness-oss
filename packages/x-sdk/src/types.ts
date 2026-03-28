@@ -89,3 +89,13 @@ export interface XDmMessage {
   dm_conversation_id: string;
   dm_event_id: string;
 }
+
+export interface XList {
+  id: string;
+  name: string;
+  description?: string;
+  owner_id?: string;
+  follower_count?: number;
+  member_count?: number;
+  created_at?: string;
+}

@@ -1,4 +1,4 @@
-import type { XUser, XTweet, XApiResponse, CreateTweetParams, XClientConfig, XTweetSearchResult, XTweetWithMetrics, CreateTweetFullParams, XDmEvent, XDmMessage } from './types.js';
+import type { XUser, XTweet, XApiResponse, CreateTweetParams, XClientConfig, XTweetSearchResult, XTweetWithMetrics, CreateTweetFullParams, XDmEvent, XDmMessage, XList } from './types.js';
 import { buildOAuth1Header } from './oauth1.js';
 import type { OAuth1Config } from './oauth1.js';
 
@@ -180,6 +180,28 @@ export class XClient {
 
   async removeBookmark(userId: string, tweetId: string): Promise<void> {
     await this.request('DELETE', `/users/${userId}/bookmarks/${tweetId}`);
+  }
+
+  async createList(name: string, description?: string): Promise<XList> {
+    const res = await this.post<{ data: XList }>('/lists', { name, description });
+    return res.data;
+  }
+
+  async deleteList(listId: string): Promise<void> {
+    await this.request('DELETE', `/lists/${listId}`);
+  }
+
+  async getList(listId: string): Promise<XList> {
+    const res = await this.get<{ data: XList }>(`/lists/${listId}?list.fields=owner_id,follower_count,member_count,created_at`);
+    return res.data;
+  }
+
+  async addListMember(listId: string, userId: string): Promise<void> {
+    await this.post(`/lists/${listId}/members`, { user_id: userId });
+  }
+
+  async removeListMember(listId: string, userId: string): Promise<void> {
+    await this.request('DELETE', `/lists/${listId}/members/${userId}`);
   }
 
   private async get<T>(path: string): Promise<T> {
