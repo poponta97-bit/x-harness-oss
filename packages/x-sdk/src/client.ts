@@ -1,4 +1,4 @@
-import type { XUser, XTweet, XApiResponse, CreateTweetParams, XClientConfig, XTweetSearchResult, XTweetWithMetrics, CreateTweetFullParams } from './types.js';
+import type { XUser, XTweet, XApiResponse, CreateTweetParams, XClientConfig, XTweetSearchResult, XTweetWithMetrics, CreateTweetFullParams, XDmEvent, XDmMessage } from './types.js';
 import { buildOAuth1Header } from './oauth1.js';
 import type { OAuth1Config } from './oauth1.js';
 
@@ -142,6 +142,30 @@ export class XClient {
   async searchUsers(query: string): Promise<XApiResponse<XUser[]>> {
     const params = new URLSearchParams({ query, 'user.fields': 'profile_image_url,public_metrics', max_results: '100' });
     return this.get<XApiResponse<XUser[]>>(`/users/search?${params}`);
+  }
+
+  async sendDm(participantId: string, text: string): Promise<XDmMessage> {
+    const res = await this.post<{ data: XDmMessage }>(`/dm_conversations/with/${participantId}/messages`, { text });
+    return res.data;
+  }
+
+  async sendDmToConversation(conversationId: string, text: string): Promise<XDmMessage> {
+    const res = await this.post<{ data: XDmMessage }>(`/dm_conversations/${conversationId}/messages`, { text });
+    return res.data;
+  }
+
+  async createDmConversation(participantIds: string[], text: string): Promise<XDmMessage> {
+    const res = await this.post<{ data: XDmMessage }>('/dm_conversations', { conversation_type: 'Group', participant_ids: participantIds, message: { text } });
+    return res.data;
+  }
+
+  async getDmEvents(conversationId?: string, paginationToken?: string): Promise<XApiResponse<XDmEvent[]>> {
+    const params = new URLSearchParams({ max_results: '100', 'dm_event.fields': 'sender_id,created_at,dm_conversation_id' });
+    if (paginationToken) params.set('pagination_token', paginationToken);
+    if (conversationId) {
+      return this.get<XApiResponse<XDmEvent[]>>(`/dm_conversations/${conversationId}/dm_events?${params}`);
+    }
+    return this.get<XApiResponse<XDmEvent[]>>(`/dm_events?${params}`);
   }
 
   private async get<T>(path: string): Promise<T> {

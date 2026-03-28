@@ -75,3 +75,17 @@ export interface CreateTweetFullParams {
   for_super_followers_only?: boolean;
   poll?: { options: string[]; duration_minutes: number };
 }
+
+export interface XDmEvent {
+  id: string;
+  event_type: string;
+  text?: string;
+  sender_id?: string;
+  dm_conversation_id?: string;
+  created_at?: string;
+}
+
+export interface XDmMessage {
+  dm_conversation_id: string;
+  dm_event_id: string;
+}
