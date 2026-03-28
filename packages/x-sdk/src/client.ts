@@ -1,4 +1,4 @@
-import type { XUser, XTweet, XApiResponse, CreateTweetParams, XClientConfig, XTweetSearchResult } from './types.js';
+import type { XUser, XTweet, XApiResponse, CreateTweetParams, XClientConfig, XTweetSearchResult, XTweetWithMetrics, CreateTweetFullParams } from './types.js';
 import { buildOAuth1Header } from './oauth1.js';
 import type { OAuth1Config } from './oauth1.js';
 
@@ -22,6 +22,41 @@ export class XClient {
 
   async hideTweet(tweetId: string): Promise<void> {
     await this.request('PUT', `/tweets/${tweetId}/hidden`, { hidden: true });
+  }
+
+  async getTweet(tweetId: string): Promise<XTweetWithMetrics> {
+    const params = new URLSearchParams({ 'tweet.fields': 'author_id,created_at,public_metrics' });
+    const res = await this.get<{ data: XTweetWithMetrics }>(`/tweets/${tweetId}?${params}`);
+    return res.data;
+  }
+
+  async getTweets(tweetIds: string[]): Promise<XTweetWithMetrics[]> {
+    const params = new URLSearchParams({ ids: tweetIds.join(','), 'tweet.fields': 'author_id,created_at,public_metrics' });
+    const res = await this.get<{ data: XTweetWithMetrics[] }>(`/tweets?${params}`);
+    return res.data;
+  }
+
+  async getQuoteTweets(tweetId: string, paginationToken?: string): Promise<XApiResponse<XTweetSearchResult[]>> {
+    const params = new URLSearchParams({ 'tweet.fields': 'author_id,created_at', 'user.fields': 'profile_image_url,public_metrics', expansions: 'author_id', max_results: '100' });
+    if (paginationToken) params.set('pagination_token', paginationToken);
+    return this.get<XApiResponse<XTweetSearchResult[]>>(`/tweets/${tweetId}/quote_tweets?${params}`);
+  }
+
+  async getUserTweets(userId: string, paginationToken?: string): Promise<XApiResponse<XTweetWithMetrics[]>> {
+    const params = new URLSearchParams({ 'tweet.fields': 'author_id,created_at,public_metrics', max_results: '100' });
+    if (paginationToken) params.set('pagination_token', paginationToken);
+    return this.get<XApiResponse<XTweetWithMetrics[]>>(`/users/${userId}/tweets?${params}`);
+  }
+
+  async getUserMentions(userId: string, paginationToken?: string): Promise<XApiResponse<XTweetWithMetrics[]>> {
+    const params = new URLSearchParams({ 'tweet.fields': 'author_id,created_at,public_metrics', max_results: '100' });
+    if (paginationToken) params.set('pagination_token', paginationToken);
+    return this.get<XApiResponse<XTweetWithMetrics[]>>(`/users/${userId}/mentions?${params}`);
+  }
+
+  async createTweetFull(params: CreateTweetFullParams): Promise<{ id: string; text: string }> {
+    const res = await this.post<{ data: { id: string; text: string } }>('/tweets', params);
+    return res.data;
   }
 
   async getLikingUsers(tweetId: string, paginationToken?: string): Promise<XApiResponse<XUser[]>> {
