@@ -168,6 +168,20 @@ export class XClient {
     return this.get<XApiResponse<XDmEvent[]>>(`/dm_events?${params}`);
   }
 
+  async getBookmarks(userId: string, paginationToken?: string): Promise<XApiResponse<XTweetWithMetrics[]>> {
+    const params = new URLSearchParams({ 'tweet.fields': 'author_id,created_at,public_metrics', max_results: '100' });
+    if (paginationToken) params.set('pagination_token', paginationToken);
+    return this.get<XApiResponse<XTweetWithMetrics[]>>(`/users/${userId}/bookmarks?${params}`);
+  }
+
+  async bookmark(userId: string, tweetId: string): Promise<void> {
+    await this.post(`/users/${userId}/bookmarks`, { tweet_id: tweetId });
+  }
+
+  async removeBookmark(userId: string, tweetId: string): Promise<void> {
+    await this.request('DELETE', `/users/${userId}/bookmarks/${tweetId}`);
+  }
+
   private async get<T>(path: string): Promise<T> {
     return this.request<T>('GET', path);
   }
