@@ -45,10 +45,17 @@ async function scheduled(
 ): Promise<void> {
   const dbAccounts = await getXAccounts(env.DB);
 
-  // Only run scheduled jobs for accounts that exist in the DB (token must be registered)
   const jobs: Promise<void>[] = [];
   for (const account of dbAccounts) {
-    const xClient = new XClient(account.access_token);
+    const xClient = account.consumer_key && account.consumer_secret && account.access_token_secret
+      ? new XClient({
+          type: 'oauth1',
+          consumerKey: account.consumer_key,
+          consumerSecret: account.consumer_secret,
+          accessToken: account.access_token,
+          accessTokenSecret: account.access_token_secret,
+        })
+      : new XClient(account.access_token);
     jobs.push(processEngagementGates(env.DB, xClient, account.id));
     jobs.push(processScheduledPosts(env.DB, xClient, account.id));
   }

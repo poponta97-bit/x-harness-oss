@@ -17,12 +17,19 @@ function serialize(a: any) {
 
 xAccounts.post('/api/x-accounts', async (c) => {
   const body = await c.req.json<{
-    xUserId: string; username: string; accessToken: string; refreshToken?: string; displayName?: string;
+    xUserId: string;
+    username: string;
+    accessToken: string;
+    refreshToken?: string;
+    displayName?: string;
+    consumerKey?: string;
+    consumerSecret?: string;
+    accessTokenSecret?: string;
   }>();
   if (!body.xUserId || !body.username || !body.accessToken) {
     return c.json({ success: false, error: 'Missing required fields' }, 400);
   }
-  const account = await createXAccount(c.env.DB, body.xUserId, body.username, body.accessToken, body.refreshToken, body.displayName);
+  const account = await createXAccount(c.env.DB, body);
   return c.json({ success: true, data: serialize(account) }, 201);
 });
 
@@ -33,7 +40,14 @@ xAccounts.get('/api/x-accounts', async (c) => {
 });
 
 xAccounts.put('/api/x-accounts/:id', async (c) => {
-  const body = await c.req.json<{ accessToken?: string; refreshToken?: string; isActive?: boolean }>();
+  const body = await c.req.json<{
+    accessToken?: string;
+    refreshToken?: string;
+    consumerKey?: string;
+    consumerSecret?: string;
+    accessTokenSecret?: string;
+    isActive?: boolean;
+  }>();
   const existing = await getXAccountById(c.env.DB, c.req.param('id'));
   if (!existing) return c.json({ success: false, error: 'Not found' }, 404);
   await updateXAccount(c.env.DB, c.req.param('id'), body);
