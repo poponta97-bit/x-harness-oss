@@ -6,14 +6,28 @@ import type { Env } from '../index.js';
 const posts = new Hono<Env>();
 
 posts.post('/api/posts', async (c) => {
-  const { text, mediaIds } = await c.req.json<{ text: string; mediaIds?: string[] }>();
-  if (!text) return c.json({ success: false, error: 'Missing required field: text' }, 400);
-  const xClient = new XClient(c.env.X_ACCESS_TOKEN);
-  const tweet = await xClient.createTweet({
-    text,
-    media: mediaIds ? { media_ids: mediaIds } : undefined,
-  });
-  return c.json({ success: true, data: tweet }, 201);
+  const { xAccountId, text, mediaIds } = await c.req.json<{ xAccountId: string; text: string; mediaIds?: string[] }>();
+  if (!text || !xAccountId) return c.json({ success: false, error: 'Missing required fields: xAccountId, text' }, 400);
+  const account = await getXAccountById(c.env.DB, xAccountId);
+  if (!account) return c.json({ success: false, error: 'X account not found' }, 404);
+  const xClient = account.consumer_key && account.consumer_secret && account.access_token_secret
+    ? new XClient({
+        type: 'oauth1',
+        consumerKey: account.consumer_key,
+        consumerSecret: account.consumer_secret,
+        accessToken: account.access_token,
+        accessTokenSecret: account.access_token_secret,
+      })
+    : new XClient(account.access_token);
+  try {
+    const tweet = await xClient.createTweet({
+      text,
+      media: mediaIds ? { media_ids: mediaIds } : undefined,
+    });
+    return c.json({ success: true, data: tweet }, 201);
+  } catch (err: any) {
+    return c.json({ success: false, error: err.message ?? 'Failed to create tweet' }, 500);
+  }
 });
 
 posts.post('/api/posts/schedule', async (c) => {
