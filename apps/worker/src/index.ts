@@ -12,6 +12,8 @@ import { users } from './routes/users.js';
 import { xAccounts } from './routes/x-accounts.js';
 import { processEngagementGates } from './services/engagement-gate.js';
 import { processScheduledPosts } from './services/post-scheduler.js';
+import { stepSequences } from './routes/step-sequences.js';
+import { processStepSequences } from './services/step-processor.js';
 
 export type Env = {
   Bindings: {
@@ -35,6 +37,7 @@ app.route('/', tags);
 app.route('/', posts);
 app.route('/', users);
 app.route('/', xAccounts);
+app.route('/', stepSequences);
 
 app.notFound((c) => c.json({ success: false, error: 'Not found' }, 404));
 
@@ -60,6 +63,22 @@ async function scheduled(
     jobs.push(processScheduledPosts(env.DB, xClient, account.id));
   }
   await Promise.allSettled(jobs);
+
+  // Process step sequences
+  const buildXClient = async (accountId: string): Promise<XClient | null> => {
+    const account = dbAccounts.find((a) => a.id === accountId);
+    if (!account) return null;
+    return account.consumer_key && account.consumer_secret && account.access_token_secret
+      ? new XClient({
+          type: 'oauth1',
+          consumerKey: account.consumer_key,
+          consumerSecret: account.consumer_secret,
+          accessToken: account.access_token,
+          accessTokenSecret: account.access_token_secret,
+        })
+      : new XClient(account.access_token);
+  };
+  await processStepSequences(env.DB, buildXClient);
 }
 
 export default {
