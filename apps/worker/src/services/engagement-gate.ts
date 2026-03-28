@@ -29,8 +29,7 @@ async function processOneGate(
   xClient: XClient,
   gate: DbEngagementGate,
 ): Promise<void> {
-  // DM delivery is Phase 2 — skip silently to avoid leaking private content as a public mention
-  if (gate.action_type !== 'mention_post') return;
+  if (gate.action_type !== 'mention_post' && gate.action_type !== 'dm') return;
 
   let engagedUsers;
   if (gate.trigger_type === 'like') {
@@ -39,6 +38,11 @@ async function processOneGate(
     engagedUsers = await xClient.getRetweetedBy(gate.post_id);
   } else if (gate.trigger_type === 'reply') {
     engagedUsers = await getReplyUsers(xClient, gate);
+  } else if (gate.trigger_type === 'follow') {
+    // gate.post_id holds the x_user_id of the account to check followers for
+    engagedUsers = await xClient.getFollowers(gate.post_id);
+  } else if (gate.trigger_type === 'quote') {
+    engagedUsers = await getQuoteUsers(xClient, gate);
   } else {
     return;
   }
@@ -60,16 +64,37 @@ async function processOneGate(
     const delivery = await createDelivery(db, gate.id, user.id, user.username, null, 'pending');
 
     try {
-      // Apply stealth variation before URL substitution to avoid corrupting links
-      let text = varyTemplate(gate.template.replace('{username}', user.username));
+      // Lottery check
+      if (gate.lottery_enabled) {
+        const won = Math.random() * 100 < gate.lottery_rate;
+        if (!won) {
+          if (gate.lottery_lose_template) {
+            const loseText = varyTemplate(gate.lottery_lose_template.replace('{username}', user.username));
+            await xClient.createTweet({ text: `@${user.username} ${loseText}` });
+          }
+          await updateDeliveryStatus(db, delivery.id, 'delivered');
+          incrementRateLimit(gate.x_account_id);
+          continue;
+        }
+      }
+
+      const winTemplate = (gate.lottery_enabled && gate.lottery_win_template) ? gate.lottery_win_template : gate.template;
+      let text = varyTemplate(winTemplate.replace('{username}', user.username));
       if (gate.link) {
         // Build link with one-time token for X-LINE account linking
         const personalizedLink = appendRef(gate.link, `xh:${delivery.token}`);
         text = text.replace('{link}', personalizedLink);
       }
 
-      const tweet = await xClient.createTweet({ text: `@${user.username} ${text}` });
-      await updateDeliveryStatus(db, delivery.id, 'delivered', tweet.id);
+      let tweetId: string;
+      if (gate.action_type === 'dm') {
+        await xClient.sendDm(user.id, text);
+        tweetId = 'dm';
+      } else {
+        const tweet = await xClient.createTweet({ text: `@${user.username} ${text}` });
+        tweetId = tweet.id;
+      }
+      await updateDeliveryStatus(db, delivery.id, 'delivered', tweetId);
       incrementRateLimit(gate.x_account_id);
 
       await upsertFollower(db, {
@@ -133,6 +158,28 @@ async function getReplyUsers(
     }
   }
 
+  return { data: users };
+}
+
+async function getQuoteUsers(
+  xClient: XClient,
+  gate: DbEngagementGate,
+): Promise<XApiResponse<XUser[]>> {
+  const result = await xClient.getQuoteTweets(gate.post_id);
+  if (!result.data || result.data.length === 0) return { data: [] };
+  const includes = (result as any).includes as { users?: XUser[] } | undefined;
+  const userMap = new Map<string, XUser>();
+  if (includes?.users) {
+    for (const u of includes.users) userMap.set(u.id, u);
+  }
+  const seen = new Set<string>();
+  const users: XUser[] = [];
+  for (const tweet of result.data) {
+    if (seen.has(tweet.author_id)) continue;
+    seen.add(tweet.author_id);
+    const userFromIncludes = userMap.get(tweet.author_id);
+    users.push(userFromIncludes ?? { id: tweet.author_id, name: '', username: '' });
+  }
   return { data: users };
 }
 
