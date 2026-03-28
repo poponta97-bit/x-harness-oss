@@ -9,6 +9,9 @@ CREATE TABLE IF NOT EXISTS x_accounts (
   display_name TEXT,
   access_token TEXT NOT NULL,
   refresh_token TEXT,
+  consumer_key TEXT,
+  consumer_secret TEXT,
+  access_token_secret TEXT,
   is_active INTEGER DEFAULT 1,
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL
