@@ -101,8 +101,8 @@ async function getReplyUsers(
   xClient: XClient,
   gate: DbEngagementGate,
 ): Promise<XApiResponse<XUser[]>> {
-  // Search for replies to this conversation, excluding the post author
-  const result = await xClient.searchRecentTweets(`conversation_id:${gate.post_id}`);
+  // Search for replies to this conversation only (is:reply excludes the root tweet itself)
+  const result = await xClient.searchRecentTweets(`conversation_id:${gate.post_id} is:reply`);
 
   if (!result.data || result.data.length === 0) {
     return { data: [] };
