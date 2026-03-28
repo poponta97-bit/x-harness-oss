@@ -139,6 +139,11 @@ export class XClient {
     await this.request('DELETE', `/users/${userId}/following/${targetUserId}`);
   }
 
+  async searchUsers(query: string): Promise<XApiResponse<XUser[]>> {
+    const params = new URLSearchParams({ query, 'user.fields': 'profile_image_url,public_metrics', max_results: '100' });
+    return this.get<XApiResponse<XUser[]>>(`/users/search?${params}`);
+  }
+
   private async get<T>(path: string): Promise<T> {
     return this.request<T>('GET', path);
   }
