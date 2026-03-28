@@ -103,6 +103,28 @@ export class XClient {
     return this.get<XApiResponse<XUser[]>>(`/users/${userId}/followers?${params}`);
   }
 
+  async likeTweet(userId: string, tweetId: string): Promise<void> {
+    await this.post(`/users/${userId}/likes`, { tweet_id: tweetId });
+  }
+
+  async unlikeTweet(userId: string, tweetId: string): Promise<void> {
+    await this.request('DELETE', `/users/${userId}/likes/${tweetId}`);
+  }
+
+  async getLikedTweets(userId: string, paginationToken?: string): Promise<XApiResponse<XTweetWithMetrics[]>> {
+    const params = new URLSearchParams({ 'tweet.fields': 'author_id,created_at,public_metrics', max_results: '100' });
+    if (paginationToken) params.set('pagination_token', paginationToken);
+    return this.get<XApiResponse<XTweetWithMetrics[]>>(`/users/${userId}/liked_tweets?${params}`);
+  }
+
+  async retweet(userId: string, tweetId: string): Promise<void> {
+    await this.post(`/users/${userId}/retweets`, { tweet_id: tweetId });
+  }
+
+  async unretweet(userId: string, tweetId: string): Promise<void> {
+    await this.request('DELETE', `/users/${userId}/retweets/${tweetId}`);
+  }
+
   private async get<T>(path: string): Promise<T> {
     return this.request<T>('GET', path);
   }
