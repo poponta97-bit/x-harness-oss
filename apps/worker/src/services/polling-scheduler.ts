@@ -27,21 +27,30 @@ export function shouldPollNow(gate: DbEngagementGate): boolean {
 }
 
 export function isExpired(gate: DbEngagementGate): boolean {
+  // Only expire if expires_at is explicitly set. Gates without expires_at
+  // (e.g. pre-migration gates or constant with no expiry) never auto-expire.
   if (gate.expires_at) {
     return new Date(gate.expires_at).getTime() <= Date.now();
   }
-  if (gate.polling_strategy === 'hot_window') {
-    const ageMs = Date.now() - new Date(gate.created_at).getTime();
-    const maxPhase = HOT_WINDOW_PHASES[HOT_WINDOW_PHASES.length - 1];
-    return ageMs > maxPhase.maxAgeMs;
-  }
   return false;
+}
+
+/**
+ * Derive hot_window age from expires_at (not created_at) so that
+ * strategy switches get a fresh 72h window.
+ */
+function getHotWindowAgeMs(gate: DbEngagementGate): number {
+  if (!gate.expires_at) return Infinity; // No expiry → treat as past all phases
+  const totalWindowMs = HOT_WINDOW_PHASES[HOT_WINDOW_PHASES.length - 1].maxAgeMs;
+  const expiresAtMs = new Date(gate.expires_at).getTime();
+  const startedAtMs = expiresAtMs - totalWindowMs;
+  return Date.now() - startedAtMs;
 }
 
 export function getPhaseLabel(gate: DbEngagementGate): string {
   if (gate.polling_strategy === 'constant') return 'active';
   if (gate.polling_strategy === 'manual') return 'manual';
-  const ageMs = Date.now() - new Date(gate.created_at).getTime();
+  const ageMs = getHotWindowAgeMs(gate);
   for (const phase of HOT_WINDOW_PHASES) {
     if (ageMs <= phase.maxAgeMs) return phase.label;
   }
@@ -55,8 +64,8 @@ export function calculateNextPollAt(gate: DbEngagementGate): string {
     return new Date(now + CONSTANT_INTERVAL_MS).toISOString();
   }
 
-  // hot_window: determine interval from current phase
-  const ageMs = now - new Date(gate.created_at).getTime();
+  // hot_window: determine interval from current phase using expires_at
+  const ageMs = getHotWindowAgeMs(gate);
   for (const phase of HOT_WINDOW_PHASES) {
     if (ageMs <= phase.maxAgeMs) {
       return new Date(now + phase.intervalMs).toISOString();

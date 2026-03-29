@@ -117,6 +117,16 @@ export async function updateEngagementGate(db: D1Database, id: string, updates: 
   }
 
   const isReactivating = updates.isActive === true && !existing.is_active;
+
+  // When reactivating an expired gate, refresh expires_at so it doesn't
+  // immediately get deactivated again by isExpired()
+  if (isReactivating && !strategyChanged && updates.expiresAfterHours === undefined) {
+    if (newStrategy === 'hot_window') {
+      newExpiresAt = new Date(Date.now() + 72 * 60 * 60_000).toISOString();
+    }
+    // constant/manual: keep existing expires_at (null = no expiry)
+  }
+
   let newNextPollAt = existing.next_poll_at;
   if (isReactivating || strategyChanged) {
     newNextPollAt = newStrategy === 'manual' ? null : now;
