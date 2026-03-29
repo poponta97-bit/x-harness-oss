@@ -2,10 +2,11 @@ import { XClient, XApiRateLimitError } from '@x-harness/x-sdk';
 import type { XUser, XApiResponse } from '@x-harness/x-sdk';
 import {
   getEngagementGates, getDeliveredUserIds, createDelivery, updateDeliveryStatus,
-  upsertFollower,
+  upsertFollower, updateEngagementGate,
 } from '@x-harness/db';
 import type { DbEngagementGate } from '@x-harness/db';
 import { addJitter, varyTemplate, checkRateLimit, incrementRateLimit } from './stealth.js';
+import { shouldPollNow, isExpired, calculateNextPollAt } from './polling-scheduler.js';
 
 export async function processEngagementGates(db: D1Database, xClient: XClient, xAccountId?: string): Promise<void> {
   const allGates = await getEngagementGates(db, { activeOnly: true });
@@ -13,7 +14,24 @@ export async function processEngagementGates(db: D1Database, xClient: XClient, x
 
   for (const gate of gates) {
     try {
+      // Check expiry first
+      if (isExpired(gate)) {
+        await updateEngagementGate(db, gate.id, { isActive: false });
+        console.log(`Gate ${gate.id} expired — deactivated`);
+        continue;
+      }
+
+      // Skip if not due for polling yet
+      if (!shouldPollNow(gate)) continue;
+
       await processOneGate(db, xClient, gate);
+
+      // Update next poll time and increment API call counter
+      const nextPollAt = calculateNextPollAt(gate);
+      await db
+        .prepare('UPDATE engagement_gates SET next_poll_at = ?, api_calls_total = api_calls_total + 1, updated_at = ? WHERE id = ?')
+        .bind(nextPollAt, new Date().toISOString(), gate.id)
+        .run();
     } catch (err) {
       if (err instanceof XApiRateLimitError) {
         console.error('Rate limited — stopping engagement gate processing');
