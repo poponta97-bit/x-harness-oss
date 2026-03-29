@@ -87,6 +87,13 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       case 'create_engagement_gate':
         result = await client.post('/api/engagement-gates', a);
         break;
+      case 'update_engagement_gate':
+        result = await client.put(`/api/engagement-gates/${a.gateId}`, {
+          ...(a.isActive !== undefined ? { isActive: a.isActive } : {}),
+          ...(a.pollingStrategy ? { pollingStrategy: a.pollingStrategy } : {}),
+          ...(a.expiresAfterHours !== undefined ? { expiresAfterHours: a.expiresAfterHours } : {}),
+        });
+        break;
       case 'list_engagement_gates':
         result = await client.get('/api/engagement-gates');
         break;
