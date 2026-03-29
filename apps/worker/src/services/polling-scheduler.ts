@@ -40,11 +40,15 @@ export function isExpired(gate: DbEngagementGate): boolean {
  * strategy switches get a fresh 72h window.
  */
 function getHotWindowAgeMs(gate: DbEngagementGate): number {
-  if (!gate.expires_at) return Infinity; // No expiry → treat as past all phases
-  const totalWindowMs = HOT_WINDOW_PHASES[HOT_WINDOW_PHASES.length - 1].maxAgeMs;
-  const expiresAtMs = new Date(gate.expires_at).getTime();
-  const startedAtMs = expiresAtMs - totalWindowMs;
-  return Date.now() - startedAtMs;
+  if (gate.expires_at) {
+    // Derive window start from expires_at so strategy switches get a fresh window
+    const totalWindowMs = HOT_WINDOW_PHASES[HOT_WINDOW_PHASES.length - 1].maxAgeMs;
+    const expiresAtMs = new Date(gate.expires_at).getTime();
+    const startedAtMs = expiresAtMs - totalWindowMs;
+    return Date.now() - startedAtMs;
+  }
+  // Legacy gates (pre-migration) have no expires_at — fall back to created_at
+  return Date.now() - new Date(gate.created_at).getTime();
 }
 
 export function getPhaseLabel(gate: DbEngagementGate): string {
