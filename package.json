@@ -11,6 +11,8 @@
     "db:migrate:local": "wrangler d1 execute x-harness --file=packages/db/schema.sql --local",
     "db:migrate:004": "wrangler d1 execute x-harness --file=packages/db/migrations/004-polling-columns.sql",
     "db:migrate:004:local": "wrangler d1 execute x-harness --file=packages/db/migrations/004-polling-columns.sql --local",
+    "db:migrate:005": "wrangler d1 execute x-harness --file=packages/db/migrations/005-reply-trigger.sql",
+    "db:migrate:005:local": "wrangler d1 execute x-harness --file=packages/db/migrations/005-reply-trigger.sql --local",
     "typecheck": "pnpm -r typecheck"
   },
   "packageManager": "pnpm@9.15.4",
