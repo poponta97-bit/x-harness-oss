@@ -39,6 +39,10 @@ CREATE TABLE IF NOT EXISTS engagement_gates (
   expires_at TEXT,
   next_poll_at TEXT,
   api_calls_total INTEGER DEFAULT 0,
+  require_like INTEGER DEFAULT 0,
+  require_repost INTEGER DEFAULT 0,
+  require_follow INTEGER DEFAULT 0,
+  last_reply_since_id TEXT,
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL
 );
