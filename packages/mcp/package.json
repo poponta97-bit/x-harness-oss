@@ -1,7 +1,6 @@
 {
   "name": "@x-harness/mcp",
   "version": "0.1.0",
-  "private": true,
   "license": "MIT",
   "description": "X Harness MCP Server",
   "type": "module",
@@ -20,5 +19,8 @@
   "devDependencies": {
     "@types/node": "^22.0.0",
     "typescript": "^5.9.3"
+  },
+  "publishConfig": {
+    "access": "public"
   }
 }
