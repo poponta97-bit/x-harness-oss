@@ -176,7 +176,7 @@ export async function runSetup(repoDir: string): Promise<void> {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          userId: state.xUserId,
+          xUserId: state.xUserId,
           username: state.xUsername,
           accessToken: state.xAccessToken,
           accessTokenSecret: state.xAccessTokenSecret,

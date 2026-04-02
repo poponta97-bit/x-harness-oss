@@ -19,6 +19,13 @@ verify.get('/api/engagement-gates/:id/verify', async (c) => {
     return c.json({ success: false, error: 'Gate not found' }, 404);
   }
 
+  if (!gate.is_active) {
+    return c.json({ success: false, error: 'This gate is no longer active' }, 400);
+  }
+  if (gate.expires_at && new Date(gate.expires_at).getTime() <= Date.now()) {
+    return c.json({ success: false, error: 'This gate has expired' }, 400);
+  }
+
   // Verify only supports reply-trigger gates
   if (gate.trigger_type !== 'reply') {
     return c.json({ success: false, error: 'Verify is only supported for reply-trigger gates' }, 400);
@@ -88,6 +95,12 @@ verify.get('/api/engagement-gates/:id/verify', async (c) => {
     && (!gate.require_like || conditions.like)
     && (!gate.require_repost || conditions.repost)
     && (!gate.require_follow || conditions.follow);
+
+  // Record delivery for verify_only gates
+  if (eligible && gate.action_type === 'verify_only') {
+    const { createDelivery } = await import('@x-harness/db');
+    await createDelivery(c.env.DB, gateId, xUser.id, username, null, 'delivered');
+  }
 
   const response: Record<string, unknown> = {
     eligible,

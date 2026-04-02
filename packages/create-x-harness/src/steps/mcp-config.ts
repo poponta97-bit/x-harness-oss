@@ -12,7 +12,7 @@ export function generateMcpConfig(options: McpConfigOptions): void {
 
   const newServerConfig = {
     command: "npx",
-    args: ["-y", "@x-harness/mcp-server@latest"],
+    args: ["-y", "@x-harness/mcp@latest"],
     env: {
       X_HARNESS_API_URL: options.workerUrl,
       X_HARNESS_API_KEY: options.apiKey,

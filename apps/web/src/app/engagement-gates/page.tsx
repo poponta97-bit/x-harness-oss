@@ -379,7 +379,11 @@ export default function EngagementGatesPage() {
               <select
                 className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
                 value={form.triggerType}
-                onChange={(e) => setForm({ ...form, triggerType: e.target.value as 'like' | 'repost' | 'reply' })}
+                onChange={(e) => {
+                  const newTrigger = e.target.value as 'like' | 'repost' | 'reply';
+                  const resetAction = newTrigger !== 'reply' && form.actionType === 'verify_only' ? 'mention_post' : form.actionType;
+                  setForm({ ...form, triggerType: newTrigger, actionType: resetAction });
+                }}
               >
                 <option value="like">いいね (Like)</option>
                 <option value="repost">リポスト (Repost)</option>
@@ -397,7 +401,9 @@ export default function EngagementGatesPage() {
               >
                 <option value="mention_post">メンションリプライ (Mention Post)</option>
                 <option value="dm">DM（Phase 2）</option>
-                <option value="verify_only">検知のみ (Verify Only)</option>
+                {form.triggerType === 'reply' && (
+                  <option value="verify_only">検知のみ (Verify Only)</option>
+                )}
               </select>
               <p className="text-xs text-gray-400 mt-1">verify_only は検知・記録のみ（メッセージ送信なし）</p>
             </div>
