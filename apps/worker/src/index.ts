@@ -59,6 +59,49 @@ app.route('/', usage);
 app.route('/', xaa);
 app.route('/', campaigns);
 
+// Settings API (key-value store)
+app.get('/api/settings', async (c) => {
+  const rows = await c.env.DB.prepare('SELECT key, value, updated_at FROM settings').all<{ key: string; value: string; updated_at: string }>();
+  const settings: Record<string, string> = {};
+  for (const r of rows.results) settings[r.key] = r.value;
+  return c.json({ success: true, data: settings });
+});
+
+app.put('/api/settings', async (c) => {
+  const body = await c.req.json<Record<string, string>>();
+  const now = new Date().toISOString();
+  for (const [key, value] of Object.entries(body)) {
+    await c.env.DB.prepare('INSERT INTO settings (key, value, updated_at) VALUES (?, ?, ?) ON CONFLICT(key) DO UPDATE SET value = ?, updated_at = ?')
+      .bind(key, value, now, value, now).run();
+  }
+  return c.json({ success: true });
+});
+
+// LINE Connections API
+app.get('/api/line-connections', async (c) => {
+  const rows = await c.env.DB.prepare('SELECT id, name, worker_url, created_at FROM line_connections ORDER BY created_at DESC').all<{ id: string; name: string; worker_url: string; created_at: string }>();
+  return c.json({ success: true, data: rows.results });
+});
+
+app.get('/api/line-connections/:id', async (c) => {
+  const row = await c.env.DB.prepare('SELECT * FROM line_connections WHERE id = ?').bind(c.req.param('id')).first<{ id: string; name: string; worker_url: string; api_key: string; created_at: string }>();
+  if (!row) return c.json({ success: false, error: 'Not found' }, 404);
+  return c.json({ success: true, data: row });
+});
+
+app.post('/api/line-connections', async (c) => {
+  const body = await c.req.json<{ name: string; workerUrl: string; apiKey: string }>();
+  if (!body.name || !body.workerUrl || !body.apiKey) return c.json({ success: false, error: 'name, workerUrl, apiKey required' }, 400);
+  const id = crypto.randomUUID();
+  await c.env.DB.prepare('INSERT INTO line_connections (id, name, worker_url, api_key, created_at) VALUES (?, ?, ?, ?, datetime(\'now\'))').bind(id, body.name, body.workerUrl.replace(/\/$/, ''), body.apiKey).run();
+  return c.json({ success: true, data: { id, name: body.name, workerUrl: body.workerUrl } }, 201);
+});
+
+app.delete('/api/line-connections/:id', async (c) => {
+  await c.env.DB.prepare('DELETE FROM line_connections WHERE id = ?').bind(c.req.param('id')).run();
+  return c.json({ success: true });
+});
+
 app.notFound((c) => c.json({ success: false, error: 'Not found' }, 404));
 
 async function scheduled(

@@ -1,5 +1,5 @@
 import { Hono } from 'hono';
-import { getEngagementGateById, getDeliveredUserIds, getXAccounts } from '@x-harness/db';
+import { getEngagementGateById, getDeliveredUserIds, getXAccounts, createDelivery } from '@x-harness/db';
 import type { Env } from '../index.js';
 import { EngagementCache, checkConditions } from '../services/reply-trigger-cache.js';
 import { XClient } from '@x-harness/x-sdk';
@@ -153,7 +153,7 @@ verify.get('/api/engagement-gates/:id/repliers', async (c) => {
       })
     : new XClient(account.access_token);
 
-  // Fetch reply users
+  // Fetch reply users and pre-check all conditions
   try {
     const keyword = gate.reply_keyword ? ` "${gate.reply_keyword}"` : '';
     const result = await xClient.searchRecentTweets(
@@ -170,19 +170,45 @@ verify.get('/api/engagement-gates/:id/repliers', async (c) => {
       for (const u of includes.users) userMap.set(u.id, u);
     }
 
+    // Pre-check conditions for all repliers
+    const cache = new EngagementCache();
+    const deliveredIds = await getDeliveredUserIds(c.env.DB, gateId);
+
     const seen = new Set<string>();
-    const repliers: { username: string; displayName: string; profileImageUrl: string | null }[] = [];
+    const repliers: { username: string; displayName: string; profileImageUrl: string | null; eligible: boolean }[] = [];
 
     for (const tweet of result.data) {
       if (seen.has(tweet.author_id)) continue;
       seen.add(tweet.author_id);
 
       const u = userMap.get(tweet.author_id);
-      if (u) {
+      if (!u) continue;
+
+      // Already delivered = eligible
+      if (deliveredIds.has(tweet.author_id)) {
         repliers.push({
           username: u.username,
           displayName: u.name,
           profileImageUrl: u.profile_image_url || null,
+          eligible: true,
+        });
+        continue;
+      }
+
+      // Check all conditions
+      const conditions = await checkConditions(xClient, cache, gate, tweet.author_id, account.x_user_id);
+      conditions.reply = true; // already replied
+      const eligible = conditions.reply
+        && (!gate.require_like || conditions.like)
+        && (!gate.require_repost || conditions.repost)
+        && (!gate.require_follow || conditions.follow);
+
+      if (eligible) {
+        repliers.push({
+          username: u.username,
+          displayName: u.name,
+          profileImageUrl: u.profile_image_url || null,
+          eligible: true,
         });
       }
     }

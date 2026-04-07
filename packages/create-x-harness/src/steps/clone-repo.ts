@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { execa } from "execa";
 
-const REPO_URL = "https://github.com/Shudesu/x-harness.git";
+const REPO_URL = "https://github.com/Shudesu/x-harness-oss.git";
 
 /**
  * Clone the X Harness repo and install dependencies.

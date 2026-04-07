@@ -230,23 +230,55 @@ export default function CampaignPage() {
   const [replyKeyword, setReplyKeyword] = useState('')
 
   // Step 3: LINE連携
-  const [lineEnabled, setLineEnabled] = useState(false)
+  const [lineConnections, setLineConnections] = useState<Array<{ id: string; name: string; worker_url: string }>>([])
+  const [selectedConnectionId, setSelectedConnectionId] = useState('')
   const [lineUrl, setLineUrl] = useState('')
   const [lineApiKey, setLineApiKey] = useState('')
   const [lineLoading, setLineLoading] = useState(false)
+  const lineEnabled = !!selectedConnectionId
   const lineConfigured = lineUrl.trim().length > 0 && lineApiKey.trim().length > 0
+  const [rewardTemplates, setRewardTemplates] = useState<Array<{ id: string; name: string; messageType: string; messageContent: string }>>([])
+  const [selectedTemplateId, setSelectedTemplateId] = useState('')
+  const [templateLoading, setTemplateLoading] = useState(false)
+  const [pools, setPools] = useState<Array<{ id: string; slug: string; name: string }>>([])
+  const [selectedPoolSlug, setSelectedPoolSlug] = useState('')
+  const [poolsLoading, setPoolsLoading] = useState(false)
+  const [lineForms, setLineForms] = useState<Array<{ id: string; name: string }>>([])
+  const [selectedFormId, setSelectedFormId] = useState('')
+  const [formsLoading, setFormsLoading] = useState(false)
 
-  // LINE設定をWorker envから自動取得
+  // Load LINE connections from DB + resolve selected connection's credentials
   const loadLineConfig = useCallback(async () => {
     setLineLoading(true)
     try {
-      const res = await fetchApi<{ success: boolean; data: { configured: boolean; url: string } }>('/api/campaigns/line-config')
-      if (res.success && res.data.configured) {
-        setLineUrl(res.data.url)
+      const res = await fetchApi<{ success: boolean; data: Array<{ id: string; name: string; worker_url: string }> }>('/api/line-connections')
+      if (res.success) {
+        setLineConnections(res.data)
+        // Auto-select first if only one
+        if (res.data.length === 1 && !selectedConnectionId) setSelectedConnectionId(res.data[0].id)
       }
     } catch { /* silent */ }
     finally { setLineLoading(false) }
   }, [])
+
+  // Resolve credentials when connection is selected
+  useEffect(() => {
+    if (!selectedConnectionId) {
+      setLineUrl('')
+      setLineApiKey('')
+      return
+    }
+    const resolve = async () => {
+      try {
+        const res = await fetchApi<{ success: boolean; data: { worker_url: string; api_key: string } }>(`/api/line-connections/${selectedConnectionId}`)
+        if (res.success) {
+          setLineUrl(res.data.worker_url)
+          setLineApiKey(res.data.api_key)
+        }
+      } catch { /* silent */ }
+    }
+    resolve()
+  }, [selectedConnectionId])
 
   const loadSubscription = useCallback(async (id: string) => {
     if (!id) return
@@ -283,6 +315,88 @@ export default function CampaignPage() {
   useEffect(() => {
     if (selectedAccountId) loadSubscription(selectedAccountId)
   }, [selectedAccountId, loadSubscription])
+
+  useEffect(() => {
+    if (!lineEnabled || !lineConfigured) {
+      setRewardTemplates([])
+      setSelectedTemplateId('')
+      return
+    }
+    let cancelled = false
+    const controller = new AbortController()
+    const lhUrl = lineUrl.replace(/\/$/, '')
+    const lhKey = lineApiKey
+    setTemplateLoading(true)
+    fetch(`${lhUrl}/api/message-templates`, {
+      headers: { Authorization: `Bearer ${lhKey}` },
+      signal: controller.signal,
+    })
+      .then(r => r.json())
+      .then((json: { success: boolean; data?: Array<{ id: string; name: string; messageType: string; messageContent: string }> }) => {
+        if (!cancelled) setRewardTemplates(json.data ?? [])
+      })
+      .catch((err) => { if (!cancelled && err.name !== 'AbortError') setRewardTemplates([]) })
+      .finally(() => { if (!cancelled) setTemplateLoading(false) })
+    return () => { cancelled = true; controller.abort() }
+  }, [lineEnabled, lineUrl, lineApiKey, lineConfigured])
+
+  useEffect(() => {
+    if (!lineEnabled || !lineConfigured) {
+      setPools([])
+      setSelectedPoolSlug('')
+      return
+    }
+    let cancelled = false
+    const controller = new AbortController()
+    const lhUrl = lineUrl.replace(/\/$/, '')
+    const lhKey = lineApiKey
+    setPoolsLoading(true)
+    fetch(`${lhUrl}/api/traffic-pools`, {
+      headers: { Authorization: `Bearer ${lhKey}` },
+      signal: controller.signal,
+    })
+      .then(r => r.json())
+      .then((json: { success: boolean; data?: Array<{ id: string; slug: string; name: string }> }) => {
+        if (!cancelled) {
+          const poolList = json.data ?? []
+          setPools(poolList)
+          // Auto-select main on first load; preserve existing valid selections
+          setSelectedPoolSlug(prev => {
+            if (prev && poolList.find(p => p.slug === prev)) return prev
+            const mainPool = poolList.find(p => p.slug === 'main')
+            return mainPool ? mainPool.slug : ''
+          })
+        }
+      })
+      .catch((err) => { if (!cancelled && err.name !== 'AbortError') setPools([]) })
+      .finally(() => { if (!cancelled) setPoolsLoading(false) })
+    return () => { cancelled = true; controller.abort() }
+  }, [lineEnabled, lineUrl, lineApiKey, lineConfigured])
+
+  // Fetch LINE Harness forms
+  useEffect(() => {
+    if (!lineEnabled || !lineConfigured) {
+      setLineForms([])
+      setSelectedFormId('')
+      return
+    }
+    let cancelled = false
+    const controller = new AbortController()
+    const lhUrl = lineUrl.replace(/\/$/, '')
+    const lhKey = lineApiKey
+    setFormsLoading(true)
+    fetch(`${lhUrl}/api/forms`, {
+      headers: { Authorization: `Bearer ${lhKey}` },
+      signal: controller.signal,
+    })
+      .then(r => r.json())
+      .then((json: { success: boolean; data?: { items?: Array<{ id: string; name: string }> } }) => {
+        if (!cancelled) setLineForms(Array.isArray(json.data) ? json.data : json.data?.items ?? [])
+      })
+      .catch((err) => { if (!cancelled && err.name !== 'AbortError') setLineForms([]) })
+      .finally(() => { if (!cancelled) setFormsLoading(false) })
+    return () => { cancelled = true; controller.abort() }
+  }, [lineEnabled, lineUrl, lineApiKey, lineConfigured])
 
   // メディア処理
   useEffect(() => {
@@ -396,20 +510,33 @@ export default function CampaignPage() {
           const tagJson = await tagRes.json() as { success: boolean; data: { id: string } }
           const lineTagId = tagJson.data?.id || ''
 
-          // c. LINE Harness でフォーム作成（直接呼び出し）
-          const formRes = await fetch(`${lhUrl}/api/forms`, {
-            method: 'POST', headers: lhHeaders,
-            body: JSON.stringify({
-              name: '特典受け取りフォーム',
-              fields: [{ name: 'x_username', label: 'X ID（@なし）', type: 'text', required: true }],
-              onSubmitTagId: lineTagId,
-              onSubmitWebhookUrl: `${xWorkerUrl}/api/engagement-gates/${gateId}/verify?username={x_username}`,
-              onSubmitWebhookFailMessage: 'まだ条件を満たしていません😢\n\n✅ リプライした？\n✅ いいねした？\n✅ リポストした？\n\n完了してから再度お試しください！',
-              saveToMetadata: true,
-            }),
-          })
-          const formJson = await formRes.json() as { success: boolean; data: { id: string } }
-          campaignLink = `${lhUrl}/r/${ref}?form=${formJson.data?.id || ''}`
+          // c. フォーム: 既存選択 or 自動生成
+          let formId = selectedFormId
+          if (!formId) {
+            // 自動生成
+            const formRes = await fetch(`${lhUrl}/api/forms`, {
+              method: 'POST', headers: lhHeaders,
+              body: JSON.stringify({
+                name: `${new Date().toISOString().slice(0, 10)} ${text.slice(0, 20).replace(/\n/g, ' ')}...`,
+                fields: [{ name: 'x_username', label: 'X ID（@なし）', type: 'text', required: true }],
+                onSubmitTagId: lineTagId,
+                onSubmitWebhookUrl: `${xWorkerUrl}/api/engagement-gates/${gateId}/verify?username={x_username}`,
+                saveToMetadata: true,
+                ...((() => {
+                  const t = rewardTemplates.find(r => r.id === selectedTemplateId)
+                  return t ? { onSubmitMessageType: t.messageType, onSubmitMessageContent: t.messageContent } : {}
+                })()),
+              }),
+            })
+            const formJson = await formRes.json() as { success: boolean; data: { id: string } }
+            formId = formJson.data?.id || ''
+          }
+          const linkParams = new URLSearchParams()
+          linkParams.set('form', formId)
+          linkParams.set('gate', gateId)
+          linkParams.set('xh', xWorkerUrl)
+          if (selectedPoolSlug) linkParams.set('pool', selectedPoolSlug)
+          campaignLink = `${lhUrl}/r/${ref}?${linkParams.toString()}`
 
           // d. ゲートにLINE metadata更新
           await api.engagementGates.update(gateId, {
@@ -478,7 +605,7 @@ export default function CampaignPage() {
     setRequireRepost(false)
     setRequireFollow(false)
     setReplyKeyword('')
-    setLineEnabled(false)
+    setSelectedConnectionId('')
     setError('')
   }
 
@@ -648,6 +775,19 @@ export default function CampaignPage() {
             <p className="text-xs text-gray-500">リプライに加えて追加で必須にするエンゲージメントを設定します</p>
 
             <div className="space-y-3">
+              <div className="flex items-center gap-3 p-3 rounded-lg border border-blue-200 bg-blue-50">
+                <input
+                  type="checkbox"
+                  checked={true}
+                  disabled
+                  className="rounded border-gray-300 w-4 h-4"
+                />
+                <div>
+                  <p className="text-sm font-medium text-gray-800">リプライ必須</p>
+                  <p className="text-xs text-gray-400">投稿へのリプライは常に必須です</p>
+                </div>
+              </div>
+
               <label className="flex items-center gap-3 p-3 rounded-lg border border-gray-200 hover:bg-gray-50 cursor-pointer transition-colors">
                 <input
                   type="checkbox"
@@ -722,58 +862,101 @@ export default function CampaignPage() {
         {/* ─── Step 3: LINE連携 ─── */}
         {step === 3 && (
           <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6 space-y-5">
-            <h2 className="text-sm font-semibold text-gray-800">LINE Harness 連携（任意）</h2>
+            <h2 className="text-sm font-semibold text-gray-800">LINE Harness 連携</h2>
 
-            {/* トグル */}
-            <label className="flex items-center gap-3 cursor-pointer">
-              <div
-                onClick={() => setLineEnabled(!lineEnabled)}
-                className={`relative w-11 h-6 rounded-full transition-colors cursor-pointer ${lineEnabled ? 'bg-blue-500' : 'bg-gray-300'}`}
-              >
-                <div
-                  className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform ${lineEnabled ? 'translate-x-5' : ''}`}
-                />
-              </div>
-              <span className="text-sm font-medium text-gray-800">LINE Harness に連携する</span>
-            </label>
+            {/* 接続先選択 */}
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1">接続先</label>
+              {lineLoading ? (
+                <p className="text-xs text-gray-400">読み込み中...</p>
+              ) : lineConnections.length === 0 ? (
+                <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3">
+                  <p className="text-xs text-yellow-700">接続先が未登録です。<a href="/settings" className="underline font-medium">設定ページ</a>で追加してください。</p>
+                </div>
+              ) : (
+                <select
+                  value={selectedConnectionId}
+                  onChange={(e) => setSelectedConnectionId(e.target.value)}
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                >
+                  <option value="">LINE連携なし</option>
+                  {lineConnections.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.name}（{c.worker_url}）
+                    </option>
+                  ))}
+                </select>
+              )}
+            </div>
 
-            {lineEnabled && (
+            {lineEnabled && lineConfigured && (
               <div className="space-y-3">
-                {lineLoading ? (
-                  <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
-                    <p className="text-sm text-gray-500">LINE Harness の接続を確認中...</p>
-                  </div>
-                ) : (
-                  <div className="space-y-3">
-                    <div>
-                      <label className="block text-xs font-medium text-gray-600 mb-1">LINE Harness URL</label>
-                      <input
-                        type="text"
-                        value={lineUrl}
-                        onChange={(e) => setLineUrl(e.target.value)}
-                        placeholder="https://your-line-harness.workers.dev"
-                        className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                      />
-                      <p className="text-xs text-gray-400 mt-1">環境変数から自動取得済みの場合はプリセットされます。変更可能です。</p>
-                    </div>
-                    <div>
-                      <label className="block text-xs font-medium text-gray-600 mb-1">LINE Harness API Key</label>
-                      <input
-                        type="password"
-                        value={lineApiKey}
-                        onChange={(e) => setLineApiKey(e.target.value)}
-                        placeholder="スタッフ API Key（editor以上）"
-                        className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                      />
-                      <p className="text-xs text-gray-400 mt-1">LINE Harness のスタッフ管理画面で発行できます。</p>
-                    </div>
-                    {lineConfigured && (
-                      <div className="bg-green-50 border border-green-200 rounded-lg p-3">
-                        <p className="text-xs text-green-700">✅ 自動でフォーム作成・リンク生成を行います</p>
-                      </div>
-                    )}
-                  </div>
-                )}
+                <div className="bg-green-50 border border-green-200 rounded-lg p-3">
+                  <p className="text-xs text-green-700">✅ {lineConnections.find(c => c.id === selectedConnectionId)?.name} に接続中</p>
+                </div>
+
+                {/* Pool 選択 */}
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">Traffic Pool（アカウント分散）</label>
+                  {poolsLoading ? (
+                    <p className="text-xs text-gray-400">Pool 読み込み中...</p>
+                  ) : pools.length === 0 ? (
+                    <p className="text-xs text-gray-400">Pool が未登録です</p>
+                  ) : (
+                    <select
+                      value={selectedPoolSlug}
+                      onChange={(e) => setSelectedPoolSlug(e.target.value)}
+                      className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    >
+                      <option value="">Pool なし（デフォルトアカウント）</option>
+                      {pools.map((p) => (
+                        <option key={p.id} value={p.slug}>{p.name}（{p.slug}）</option>
+                      ))}
+                    </select>
+                  )}
+                </div>
+
+                {/* フォーム選択 */}
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">受け取りフォーム</label>
+                  {formsLoading ? (
+                    <p className="text-xs text-gray-400">フォーム読み込み中...</p>
+                  ) : lineForms.length === 0 ? (
+                    <p className="text-xs text-gray-400">フォームが未登録です</p>
+                  ) : (
+                    <select
+                      value={selectedFormId}
+                      onChange={(e) => setSelectedFormId(e.target.value)}
+                      className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    >
+                      <option value="">自動生成（X ID入力のみ）</option>
+                      {lineForms.map((f) => (
+                        <option key={f.id} value={f.id}>{f.name}</option>
+                      ))}
+                    </select>
+                  )}
+                </div>
+
+                {/* 特典メッセージ */}
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">特典メッセージ（任意）</label>
+                  {templateLoading ? (
+                    <p className="text-xs text-gray-400">テンプレート読み込み中...</p>
+                  ) : rewardTemplates.length === 0 ? (
+                    <p className="text-xs text-gray-400">テンプレートが未登録です</p>
+                  ) : (
+                    <select
+                      value={selectedTemplateId}
+                      onChange={(e) => setSelectedTemplateId(e.target.value)}
+                      className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    >
+                      <option value="">なし（デフォルト診断結果のみ）</option>
+                      {rewardTemplates.map((t) => (
+                        <option key={t.id} value={t.id}>{t.name}（{t.messageType}）</option>
+                      ))}
+                    </select>
+                  )}
+                </div>
               </div>
             )}
 
@@ -841,7 +1024,14 @@ export default function CampaignPage() {
             <div>
               <h3 className="text-sm font-semibold text-gray-700 mb-2">LINE連携</h3>
               {lineEnabled ? (
-                <p className="text-sm text-green-600">✅ ON — フォーム自動作成、{'{link}'} をリンクに置換</p>
+                <div>
+                  <p className="text-sm text-green-600">✅ ON — フォーム自動作成、{'{link}'} をリンクに置換</p>
+                  {selectedTemplateId && (() => {
+                    const t = rewardTemplates.find(r => r.id === selectedTemplateId)
+                    return t ? <p className="text-xs text-green-600 mt-1">特典: {t.name}（{t.messageType}）</p> : null
+                  })()}
+                  {selectedPoolSlug && <p className="text-xs text-green-600 mt-1">Pool: {selectedPoolSlug}</p>}
+                </div>
               ) : (
                 <p className="text-sm text-gray-400">OFF</p>
               )}
