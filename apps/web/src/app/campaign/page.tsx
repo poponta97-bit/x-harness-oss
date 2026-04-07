@@ -239,6 +239,7 @@ export default function CampaignPage() {
   const lineConfigured = lineUrl.trim().length > 0 && lineApiKey.trim().length > 0
   const [rewardTemplates, setRewardTemplates] = useState<Array<{ id: string; name: string; messageType: string; messageContent: string }>>([])
   const [selectedTemplateId, setSelectedTemplateId] = useState('')
+  const [selectedIntroTemplateId, setSelectedIntroTemplateId] = useState('')
   const [templateLoading, setTemplateLoading] = useState(false)
   const [pools, setPools] = useState<Array<{ id: string; slug: string; name: string }>>([])
   const [selectedPoolSlug, setSelectedPoolSlug] = useState('')
@@ -320,8 +321,15 @@ export default function CampaignPage() {
     if (!lineEnabled || !lineConfigured) {
       setRewardTemplates([])
       setSelectedTemplateId('')
+      setSelectedIntroTemplateId('')
       return
     }
+    // 接続が変わった瞬間に stale な選択 ID を即座にクリアする。
+    // フェッチ完了を待つと、その間に submit された場合に古い接続のテンプレ ID が
+    // 新しい接続の API へ送られる race condition が発生する。
+    setRewardTemplates([])
+    setSelectedTemplateId('')
+    setSelectedIntroTemplateId('')
     let cancelled = false
     const controller = new AbortController()
     const lhUrl = lineUrl.replace(/\/$/, '')
@@ -333,9 +341,17 @@ export default function CampaignPage() {
     })
       .then(r => r.json())
       .then((json: { success: boolean; data?: Array<{ id: string; name: string; messageType: string; messageContent: string }> }) => {
-        if (!cancelled) setRewardTemplates(json.data ?? [])
+        if (cancelled) return
+        const list = json.data ?? []
+        setRewardTemplates(list)
       })
-      .catch((err) => { if (!cancelled && err.name !== 'AbortError') setRewardTemplates([]) })
+      .catch((err) => {
+        if (!cancelled && err.name !== 'AbortError') {
+          setRewardTemplates([])
+          setSelectedTemplateId('')
+          setSelectedIntroTemplateId('')
+        }
+      })
       .finally(() => { if (!cancelled) setTemplateLoading(false) })
     return () => { cancelled = true; controller.abort() }
   }, [lineEnabled, lineUrl, lineApiKey, lineConfigured])
@@ -472,8 +488,6 @@ export default function CampaignPage() {
       const xWorkerUrl = API_URL
 
       if (lineEnabled && lineConfigured) {
-        const ref = `campaign-${Date.now().toString(36)}`
-
         // a. ゲートだけ先に作成（inactive、仮postId）
         const prepRes = await fetch(`${xWorkerUrl}/api/engagement-gates`, {
           method: 'POST',
@@ -531,6 +545,32 @@ export default function CampaignPage() {
             const formJson = await formRes.json() as { success: boolean; data: { id: string } }
             formId = formJson.data?.id || ''
           }
+
+          // c'. tracked_link 作成（intro/reward template_id を渡すことで line-harness 側で解決できる）
+          // 失敗してもキャンペーン作成自体は止めず、ランダム ref にフォールバックする
+          // （古い LINE Harness で /api/tracked-links が無い、ネットワークエラー、非 JSON レスポンス等のケースに備える）
+          let ref = `campaign-${Date.now().toString(36)}`
+          try {
+            const trackedLinkRes = await fetch(`${lhUrl}/api/tracked-links`, {
+              method: 'POST',
+              headers: lhHeaders,
+              body: JSON.stringify({
+                name: `${new Date().toISOString().slice(0, 10)} X Campaign`,
+                originalUrl: `${lhUrl}/auth/line`,
+                introTemplateId: selectedIntroTemplateId || null,
+                rewardTemplateId: selectedTemplateId || null,
+              }),
+            })
+            const trackedLinkJson = await trackedLinkRes.json() as { success: boolean; data: { id: string } }
+            if (trackedLinkJson.success && trackedLinkJson.data?.id) {
+              ref = trackedLinkJson.data.id
+            } else {
+              console.warn('tracked_link 作成失敗、ランダム ref にフォールバック', trackedLinkJson)
+            }
+          } catch (err) {
+            console.warn('tracked_link API 呼び出しエラー、ランダム ref にフォールバック', err)
+          }
+
           const linkParams = new URLSearchParams()
           linkParams.set('form', formId)
           linkParams.set('gate', gateId)
@@ -606,6 +646,7 @@ export default function CampaignPage() {
     setRequireFollow(false)
     setReplyKeyword('')
     setSelectedConnectionId('')
+    setSelectedIntroTemplateId('')
     setError('')
   }
 
@@ -932,6 +973,34 @@ export default function CampaignPage() {
                       <option value="">自動生成（X ID入力のみ）</option>
                       {lineForms.map((f) => (
                         <option key={f.id} value={f.id}>{f.name}</option>
+                      ))}
+                    </select>
+                  )}
+                </div>
+
+                {/* 流入時メッセージ（任意） */}
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">
+                    流入時メッセージ（任意）
+                  </label>
+                  <p className="text-[10px] text-gray-400 mb-1">
+                    友だち追加直後に届く push メッセージ。テンプレ内ボタン URL に <code>{`{formUrl}`}</code> を入れると送信時に実フォーム URL に置換されます。
+                  </p>
+                  {templateLoading ? (
+                    <p className="text-xs text-gray-400">テンプレート読み込み中...</p>
+                  ) : rewardTemplates.length === 0 ? (
+                    <p className="text-xs text-gray-400">テンプレートが未登録です</p>
+                  ) : (
+                    <select
+                      value={selectedIntroTemplateId}
+                      onChange={(e) => setSelectedIntroTemplateId(e.target.value)}
+                      className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    >
+                      <option value="">デフォルト（既定の Flex メッセージ）</option>
+                      {rewardTemplates.map((t) => (
+                        <option key={t.id} value={t.id}>
+                          {t.name}（{t.messageType}）
+                        </option>
                       ))}
                     </select>
                   )}

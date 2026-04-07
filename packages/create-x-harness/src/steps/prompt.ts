@@ -19,6 +19,8 @@ export async function promptXCredentials(): Promise<XCredentials> {
       "https://developer.x.com にアクセスして取得してください。",
       "Pay-Per-Use プラン（$0 基本料 + リクエスト単位課金）が必要です。",
       "",
+      "※XのAPIの利用で月数百円程度の課金が必要になる場合がありますが、X Harness自体が料金を請求することはありません。",
+      "",
       "手順:",
       "1. X Developer アカウントを作成",
       "2. プロジェクト + アプリを作成",
