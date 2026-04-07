@@ -75,10 +75,21 @@ export default function PostsPage() {
 
   // History
   const [history, setHistory] = useState<TweetHistory[]>([])
+  // Account id the currently displayed history rows belong to. Used to bind
+  // each row to its source account so an in-flight account switch (where
+  // selectedAccountId has already changed but loadHistory hasn't refreshed
+  // the list yet) can't delete the wrong account's tweet.
+  const [historyAccountId, setHistoryAccountId] = useState<string>('')
+  // Mirror of historyAccountId so loadHistory can read the *latest* binding
+  // when its async fetch resolves, without taking historyAccountId as a
+  // dependency (which would recreate loadHistory and double-trigger the
+  // mount/account-switch effect).
+  const historyAccountIdRef = useRef<string>('')
   const [historyLoading, setHistoryLoading] = useState(true)
   const [historyError, setHistoryError] = useState('')
   const [nextCursor, setNextCursor] = useState<string | undefined>(undefined)
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set())
+  const [deletingIds, setDeletingIds] = useState<Set<string>>(new Set())
 
   const loadSubscription = useCallback(async (accountId: string) => {
     if (!accountId) return
@@ -96,17 +107,30 @@ export default function PostsPage() {
   }, [])
 
   const loadHistory = useCallback(async (cursor?: string, accountId?: string) => {
+    const effectiveAccountId = accountId || selectedAccountId || ''
     setHistoryLoading(true)
     setHistoryError('')
     try {
-      const res = await api.posts.history({ xAccountId: accountId || selectedAccountId || undefined, limit: 20, cursor })
+      const res = await api.posts.history({ xAccountId: effectiveAccountId || undefined, limit: 20, cursor })
       if (res.success) {
         if (cursor) {
+          // Drop stale paginated responses if the binding has shifted to
+          // another account between dispatch and resolution. Read from the
+          // ref so we always see the *latest* binding rather than the value
+          // captured when this loadHistory closure was created.
+          if (effectiveAccountId !== historyAccountIdRef.current) {
+            return
+          }
           setHistory((prev) => [...prev, ...res.data.items])
+          setNextCursor(res.data.nextCursor)
         } else {
           setHistory(res.data.items)
+          // Reset binding only on a fresh (non-paginated) load — pagination
+          // appends rows that belong to the same account as the first page.
+          historyAccountIdRef.current = effectiveAccountId
+          setHistoryAccountId(effectiveAccountId)
+          setNextCursor(res.data.nextCursor)
         }
-        setNextCursor(res.data.nextCursor)
       } else {
         setHistoryError('投稿履歴の読み込みに失敗しました')
       }
@@ -116,6 +140,41 @@ export default function PostsPage() {
       setHistoryLoading(false)
     }
   }, [selectedAccountId])
+
+  const handleDeletePost = useCallback(async (tweetId: string, preview: string) => {
+    // Bind to historyAccountId (the account these rows were loaded for), not
+    // selectedAccountId — these can drift mid-account-switch and we'd otherwise
+    // send the wrong credentials for the visible row.
+    if (!historyAccountId) {
+      alert('アカウントが選択されていません')
+      return
+    }
+    if (!confirm(`この投稿を削除しますか？\n\n「${preview.length > 60 ? preview.slice(0, 60) + '…' : preview}」\n\nXからも完全に削除されます。元には戻せません。`)) {
+      return
+    }
+    setDeletingIds((prev) => new Set(prev).add(tweetId))
+    try {
+      const res = await api.posts.delete(tweetId, historyAccountId)
+      if (res.success) {
+        // Refresh from cursor=undefined (first page) instead of just filtering
+        // out the row. Filtering would leave nextCursor stale: deleting the
+        // last visible row on a multi-page history would hit the empty-state
+        // branch and hide the 次へ button, stranding older tweets behind a
+        // cursor the user can no longer reach.
+        await loadHistory(undefined, historyAccountId)
+      } else {
+        alert('削除に失敗しました: ' + ((res as { error?: string }).error ?? 'unknown'))
+      }
+    } catch (err) {
+      alert('削除に失敗しました: ' + (err instanceof Error ? err.message : String(err)))
+    } finally {
+      setDeletingIds((prev) => {
+        const next = new Set(prev)
+        next.delete(tweetId)
+        return next
+      })
+    }
+  }, [historyAccountId, loadHistory])
 
   const loadScheduled = useCallback(async () => {
     setScheduledLoading(true)
@@ -701,14 +760,24 @@ export default function PostsPage() {
                             {formatDate(tweet.created_at)}
                           </td>
                           <td className="px-4 py-3 text-right">
-                            {truncated && (
+                            <div className="flex items-center justify-end gap-3">
+                              {truncated && (
+                                <button
+                                  onClick={() => toggleExpanded(tweet.id)}
+                                  className="text-xs text-blue-500 hover:text-blue-700"
+                                >
+                                  {isExpanded ? '折りたたむ' : '展開'}
+                                </button>
+                              )}
                               <button
-                                onClick={() => toggleExpanded(tweet.id)}
-                                className="text-xs text-blue-500 hover:text-blue-700"
+                                onClick={() => handleDeletePost(tweet.id, tweet.text)}
+                                disabled={deletingIds.has(tweet.id) || historyAccountId !== selectedAccountId || historyLoading}
+                                className="text-xs text-red-500 hover:text-red-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                                title={historyAccountId !== selectedAccountId ? '別アカウントの履歴を読み込み中…' : 'この投稿をXから削除'}
                               >
-                                {isExpanded ? '折りたたむ' : '展開'}
+                                {deletingIds.has(tweet.id) ? '削除中…' : '削除'}
                               </button>
-                            )}
+                            </div>
                           </td>
                         </tr>
                       </>

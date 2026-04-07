@@ -86,6 +86,48 @@ posts.delete('/api/posts/scheduled/:id', async (c) => {
   return c.json({ success: true });
 });
 
+// DELETE /api/posts/:tweetId — hard-delete a posted tweet via X API
+//
+// Refuses to delete tweets that back an active engagement gate, since
+// processEngagementGates() would otherwise keep polling X for the now-missing
+// post id (likes/RTs/replies). The operator must deactivate or delete the
+// gate first. Pass `?force=1` to delete the tweet anyway.
+posts.delete('/api/posts/:tweetId', async (c) => {
+  const tweetId = c.req.param('tweetId');
+  const xAccountId = c.req.query('xAccountId');
+  const force = c.req.query('force') === '1';
+  if (!xAccountId) return c.json({ success: false, error: 'Missing required query param: xAccountId' }, 400);
+  const account = await getXAccountById(c.env.DB, xAccountId);
+  if (!account) return c.json({ success: false, error: 'X account not found' }, 404);
+
+  if (!force) {
+    const linkedGates = await c.env.DB
+      .prepare('SELECT id, is_active FROM engagement_gates WHERE post_id = ?')
+      .bind(tweetId)
+      .all<{ id: string; is_active: number }>();
+    const activeLinkedGates = (linkedGates.results ?? []).filter((g) => Number(g.is_active) === 1);
+    if (activeLinkedGates.length > 0) {
+      return c.json(
+        {
+          success: false,
+          error: 'tweet is referenced by an active engagement gate; deactivate or delete the gate first, or pass ?force=1',
+          data: { linkedGateIds: activeLinkedGates.map((g) => g.id) },
+        },
+        409,
+      );
+    }
+  }
+
+  const xClient = buildXClient(account);
+  try {
+    await xClient.deleteTweet(tweetId);
+    c.executionCtx.waitUntil(incrementApiUsage(c.env.DB, account.id, 'delete_tweet'));
+    return c.json({ success: true });
+  } catch (err: any) {
+    return c.json({ success: false, error: err.message ?? 'Failed to delete tweet' }, 500);
+  }
+});
+
 // POST /api/posts/thread — post a thread (sequence of replies)
 posts.post('/api/posts/thread', async (c) => {
   const { xAccountId, texts } = await c.req.json<{ xAccountId: string; texts: string[] }>();

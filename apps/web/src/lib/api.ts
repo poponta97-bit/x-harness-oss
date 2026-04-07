@@ -253,6 +253,8 @@ export const api = {
     cancel: (id: string) => fetchApi<ApiResponse<void>>(`/api/posts/scheduled/${id}`, { method: 'DELETE' }),
     create: (data: { xAccountId: string; text: string; quoteTweetId?: string; mediaIds?: string[] }) =>
       fetchApi<ApiResponse<TweetHistory>>('/api/posts', { method: 'POST', body: JSON.stringify(data) }),
+    delete: (tweetId: string, xAccountId: string) =>
+      fetchApi<ApiResponse<void>>(`/api/posts/${tweetId}?xAccountId=${encodeURIComponent(xAccountId)}`, { method: 'DELETE' }),
     thread: (data: { xAccountId: string; texts: string[]; mediaIds?: string[] }) =>
       fetchApi<ApiResponse<TweetHistory[]>>('/api/posts/thread', { method: 'POST', body: JSON.stringify(data) }),
     history: (params?: { xAccountId?: string; limit?: number; cursor?: string }) => {

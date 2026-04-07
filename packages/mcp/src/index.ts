@@ -67,7 +67,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         });
         break;
       case 'delete_post':
-        result = await client.del(`/api/posts/${a.tweetId}`);
+        result = await client.del(`/api/posts/${a.tweetId}?xAccountId=${encodeURIComponent(a.xAccountId)}`);
         break;
       case 'get_post':
         result = await client.get(`/api/posts/${a.tweetId}`);
