@@ -15,6 +15,9 @@ interface LineConnection {
 export default function SettingsPage() {
   const [connections, setConnections] = useState<LineConnection[]>([])
   const [loading, setLoading] = useState(true)
+  const [autoEnabled, setAutoEnabled] = useState(false)
+  const [autoLoading, setAutoLoading] = useState(true)
+  const [autoSaving, setAutoSaving] = useState(false)
 
   // New connection form
   const [name, setName] = useState('')
@@ -30,7 +33,37 @@ export default function SettingsPage() {
     setLoading(false)
   }
 
-  useEffect(() => { load() }, [])
+  const loadSettings = async () => {
+    try {
+      const res = await fetchApi<{ success: boolean; data: Record<string, string> }>('/api/settings')
+      if (res.success) {
+        setAutoEnabled(res.data.auto_features_enabled === 'true')
+      }
+    } catch { /* ignore */ }
+    setAutoLoading(false)
+  }
+
+  const toggleAuto = async () => {
+    const newValue = !autoEnabled
+    if (newValue && !confirm(
+      '⚠️ 自動機能を有効にすると X API 使用料が発生します。\n\n' +
+      '・エンゲージメントゲートの自動ポーリング（$0.005/回）\n' +
+      '・予約投稿の自動実行（$0.010/回）\n' +
+      '・ステップシーケンスの自動実行\n\n' +
+      '5分ごとに課金が発生します。有効にしますか？'
+    )) return
+    setAutoSaving(true)
+    try {
+      await fetchApi('/api/settings', {
+        method: 'PUT',
+        body: JSON.stringify({ auto_features_enabled: String(newValue) }),
+      })
+      setAutoEnabled(newValue)
+    } catch { /* ignore */ }
+    setAutoSaving(false)
+  }
+
+  useEffect(() => { load(); loadSettings() }, [])
 
   const handleAdd = async () => {
     if (!name || !url || !apiKey) return
@@ -78,12 +111,50 @@ export default function SettingsPage() {
 
   return (
     <div>
-      <Header title="設定" description="LINE Harness 接続先の管理" />
+      <Header title="L Harness 設定" description="自動機能・L Harness 接続の管理" />
 
       <div className="max-w-2xl space-y-6">
+        {/* 自動機能トグル */}
+        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
+          <div className="flex items-center justify-between">
+            <div>
+              <h2 className="text-lg font-semibold text-gray-800">自動機能</h2>
+              <p className="text-xs text-gray-500 mt-1">
+                エンゲージメントゲート・予約投稿・ステップシーケンスの自動実行
+              </p>
+            </div>
+            {autoLoading ? (
+              <div className="w-12 h-6 bg-gray-200 rounded-full animate-pulse" />
+            ) : (
+              <button
+                onClick={toggleAuto}
+                disabled={autoSaving}
+                className={`relative w-12 h-6 rounded-full transition-colors ${autoEnabled ? 'bg-green-500' : 'bg-gray-300'} ${autoSaving ? 'opacity-50' : ''}`}
+              >
+                <span className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform ${autoEnabled ? 'translate-x-6' : ''}`} />
+              </button>
+            )}
+          </div>
+          {!autoEnabled && !autoLoading && (
+            <div className="mt-3 p-3 bg-amber-50 border border-amber-200 rounded-lg">
+              <p className="text-xs text-amber-700">
+                <strong>オフ</strong> — cron ジョブは停止中です。ゲートのポーリング・予約投稿・ステップシーケンスは実行されません。
+                API 使用料は発生しません。
+              </p>
+            </div>
+          )}
+          {autoEnabled && !autoLoading && (
+            <div className="mt-3 p-3 bg-green-50 border border-green-200 rounded-lg">
+              <p className="text-xs text-green-700">
+                <strong>オン</strong> — 5分ごとに自動実行されます。X API 使用料が発生します（Read: $0.005/回、Write: $0.010/回）。
+              </p>
+            </div>
+          )}
+        </div>
+
         {/* 登録済み一覧 */}
         <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
-          <h2 className="text-lg font-semibold text-gray-800 mb-4">LINE Harness 接続先</h2>
+          <h2 className="text-lg font-semibold text-gray-800 mb-4">L Harness 接続先</h2>
 
           {loading ? (
             <p className="text-sm text-gray-400">読み込み中...</p>

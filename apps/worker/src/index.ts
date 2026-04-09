@@ -106,29 +106,41 @@ app.delete('/api/line-connections/:id', async (c) => {
 
 app.notFound((c) => c.json({ success: false, error: 'Not found' }, 404));
 
+async function getSettingBool(db: D1Database, key: string, defaultValue = false): Promise<boolean> {
+  const row = await db.prepare('SELECT value FROM settings WHERE key = ?').bind(key).first<{ value: string }>();
+  if (!row) return defaultValue;
+  return row.value === 'true' || row.value === '1';
+}
+
 async function scheduled(
   _event: ScheduledEvent,
   env: Env['Bindings'],
   _ctx: ExecutionContext,
 ): Promise<void> {
+  // Auto-features are OFF by default to avoid unexpected API costs.
+  // Users enable them from the dashboard settings page.
+  const autoEnabled = await getSettingBool(env.DB, 'auto_features_enabled', false);
+
   const dbAccounts = await getXAccounts(env.DB);
 
-  const jobs: Promise<void>[] = [];
-  for (const account of dbAccounts) {
-    const xClient = account.consumer_key && account.consumer_secret && account.access_token_secret
-      ? new XClient({
-          type: 'oauth1',
-          consumerKey: account.consumer_key,
-          consumerSecret: account.consumer_secret,
-          accessToken: account.access_token,
-          accessTokenSecret: account.access_token_secret,
-        })
-      : new XClient(account.access_token);
-    const cache = new EngagementCache();
-    jobs.push(processEngagementGates(env.DB, xClient, account.id, false, cache));
-    jobs.push(processScheduledPosts(env.DB, xClient, account.id));
+  if (autoEnabled) {
+    const jobs: Promise<void>[] = [];
+    for (const account of dbAccounts) {
+      const xClient = account.consumer_key && account.consumer_secret && account.access_token_secret
+        ? new XClient({
+            type: 'oauth1',
+            consumerKey: account.consumer_key,
+            consumerSecret: account.consumer_secret,
+            accessToken: account.access_token,
+            accessTokenSecret: account.access_token_secret,
+          })
+        : new XClient(account.access_token);
+      const cache = new EngagementCache();
+      jobs.push(processEngagementGates(env.DB, xClient, account.id, false, cache));
+      jobs.push(processScheduledPosts(env.DB, xClient, account.id));
+    }
+    await Promise.allSettled(jobs);
   }
-  await Promise.allSettled(jobs);
 
   // Record daily follower snapshots
   for (const account of dbAccounts) {
@@ -158,21 +170,23 @@ async function scheduled(
     }
   }
 
-  // Process step sequences
-  const buildXClient = async (accountId: string): Promise<XClient | null> => {
-    const account = dbAccounts.find((a) => a.id === accountId);
-    if (!account) return null;
-    return account.consumer_key && account.consumer_secret && account.access_token_secret
-      ? new XClient({
-          type: 'oauth1',
-          consumerKey: account.consumer_key,
-          consumerSecret: account.consumer_secret,
-          accessToken: account.access_token,
-          accessTokenSecret: account.access_token_secret,
-        })
-      : new XClient(account.access_token);
-  };
-  await processStepSequences(env.DB, buildXClient);
+  // Process step sequences (also gated by auto_features_enabled)
+  if (autoEnabled) {
+    const buildXClient = async (accountId: string): Promise<XClient | null> => {
+      const account = dbAccounts.find((a) => a.id === accountId);
+      if (!account) return null;
+      return account.consumer_key && account.consumer_secret && account.access_token_secret
+        ? new XClient({
+            type: 'oauth1',
+            consumerKey: account.consumer_key,
+            consumerSecret: account.consumer_secret,
+            accessToken: account.access_token,
+            accessTokenSecret: account.access_token_secret,
+          })
+        : new XClient(account.access_token);
+    };
+    await processStepSequences(env.DB, buildXClient);
+  }
 }
 
 export default {
