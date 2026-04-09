@@ -40,7 +40,7 @@ function InlineCreateForm({ onCreated, xAccountId }: InlineCreateFormProps) {
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState('')
   const [postId, setPostId] = useState('')
-  const [triggerType, setTriggerType] = useState('reply')
+  const [triggerType, setTriggerType] = useState('repost')
   const [actionType, setActionType] = useState('verify_only')
   const [template, setTemplate] = useState('')
   const [pollingStrategy, setPollingStrategy] = useState('hot_window')
