@@ -495,7 +495,7 @@ export default function CampaignPage() {
           body: JSON.stringify({
             xAccountId: accountId,
             postId: `pending-${Date.now()}`,
-            triggerType: 'reply',
+            triggerType: 'repost',
             actionType: 'verify_only',
             template: '',
             pollingStrategy: 'manual',
@@ -813,7 +813,7 @@ export default function CampaignPage() {
         {step === 2 && (
           <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6 space-y-5">
             <h2 className="text-sm font-semibold text-gray-800">条件設定</h2>
-            <p className="text-xs text-gray-500">リプライに加えて追加で必須にするエンゲージメントを設定します</p>
+            <p className="text-xs text-gray-500">リポストに加えて追加で必須にするエンゲージメントを設定します</p>
 
             <div className="space-y-3">
               <div className="flex items-center gap-3 p-3 rounded-lg border border-blue-200 bg-blue-50">
@@ -824,8 +824,8 @@ export default function CampaignPage() {
                   className="rounded border-gray-300 w-4 h-4"
                 />
                 <div>
-                  <p className="text-sm font-medium text-gray-800">リプライ必須</p>
-                  <p className="text-xs text-gray-400">投稿へのリプライは常に必須です</p>
+                  <p className="text-sm font-medium text-gray-800">リポスト必須</p>
+                  <p className="text-xs text-gray-400">投稿のリポストは常に必須です（スパムフィルタの影響を受けません）</p>
                 </div>
               </div>
 
@@ -845,19 +845,6 @@ export default function CampaignPage() {
               <label className="flex items-center gap-3 p-3 rounded-lg border border-gray-200 hover:bg-gray-50 cursor-pointer transition-colors">
                 <input
                   type="checkbox"
-                  checked={requireRepost}
-                  onChange={(e) => setRequireRepost(e.target.checked)}
-                  className="rounded border-gray-300 w-4 h-4"
-                />
-                <div>
-                  <p className="text-sm font-medium text-gray-800">リポスト必須</p>
-                  <p className="text-xs text-gray-400">投稿をリポストしていることを確認</p>
-                </div>
-              </label>
-
-              <label className="flex items-center gap-3 p-3 rounded-lg border border-gray-200 hover:bg-gray-50 cursor-pointer transition-colors">
-                <input
-                  type="checkbox"
                   checked={requireFollow}
                   onChange={(e) => setRequireFollow(e.target.checked)}
                   className="rounded border-gray-300 w-4 h-4"
@@ -867,19 +854,6 @@ export default function CampaignPage() {
                   <p className="text-xs text-gray-400">アカウントをフォローしていることを確認</p>
                 </div>
               </label>
-            </div>
-
-            {/* リプライキーワード */}
-            <div>
-              <label className="block text-xs font-medium text-gray-600 mb-1">リプライキーワード（任意）</label>
-              <input
-                type="text"
-                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                placeholder="例: 参加"
-                value={replyKeyword}
-                onChange={(e) => setReplyKeyword(e.target.value)}
-              />
-              <p className="text-xs text-gray-400 mt-1">このキーワードを含むリプライのみ対象にします（空欄で全リプライ対象）</p>
             </div>
 
             <div className="flex items-center justify-between pt-2">
@@ -1082,7 +1056,7 @@ export default function CampaignPage() {
             <div>
               <h3 className="text-sm font-semibold text-gray-700 mb-2">条件</h3>
               <div className="flex flex-wrap gap-2">
-                <span className="px-3 py-1 text-xs font-medium bg-blue-50 text-blue-700 rounded-full">リプライ必須</span>
+                <span className="px-3 py-1 text-xs font-medium bg-blue-50 text-blue-700 rounded-full">リポスト必須</span>
                 {requireLike && <span className="px-3 py-1 text-xs font-medium bg-red-50 text-red-700 rounded-full">いいね必須</span>}
                 {requireRepost && <span className="px-3 py-1 text-xs font-medium bg-green-50 text-green-700 rounded-full">リポスト必須</span>}
                 {requireFollow && <span className="px-3 py-1 text-xs font-medium bg-purple-50 text-purple-700 rounded-full">フォロー必須</span>}
