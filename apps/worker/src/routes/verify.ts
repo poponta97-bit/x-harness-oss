@@ -259,16 +259,79 @@ verify.get('/api/engagement-gates/:id/verify', async (c) => {
   if (cached) {
     const match = cached.find((r) => r.username.toLowerCase() === username.toLowerCase());
     if (match) {
-      if (match.eligible && gate.action_type === 'verify_only' && !deliveredIds.has(match.xUserId)) {
-        await createDelivery(c.env.DB, gateId, match.xUserId, match.username, null, 'delivered');
+      // Eligible → return immediately
+      if (match.eligible) {
+        if (gate.action_type === 'verify_only' && !deliveredIds.has(match.xUserId)) {
+          await createDelivery(c.env.DB, gateId, match.xUserId, match.username, null, 'delivered');
+        }
+        return c.json({
+          success: true,
+          data: {
+            eligible: true,
+            alreadyDelivered: deliveredIds.has(match.xUserId),
+            conditions: match.conditions,
+            cached: true,
+          },
+        });
       }
+
+      // Not eligible → re-check only the failed conditions (1-2 API calls max)
+      // User might have followed/liked AFTER the cache was created.
+      const clientResult = await buildXClientForGate(c.env.DB, gate);
+      if (clientResult) {
+        try {
+          const freshCache = new EngagementCache();
+          const freshConditions = await checkConditions(
+            clientResult.xClient, freshCache, gate, match.xUserId, clientResult.account.x_user_id,
+          );
+          // Keep the trigger condition from cache (repost/like/reply = already confirmed)
+          const updatedConditions = { ...match.conditions };
+          if (match.conditions.follow === false && gate.require_follow) {
+            updatedConditions.follow = freshConditions.follow;
+          }
+          if (match.conditions.like === false && gate.require_like) {
+            updatedConditions.like = freshConditions.like;
+          }
+          if (match.conditions.repost === false && gate.require_repost) {
+            updatedConditions.repost = freshConditions.repost;
+          }
+
+          const nowEligible = (updatedConditions.repost !== false)
+            && (updatedConditions.like !== false)
+            && (updatedConditions.follow !== false);
+
+          // Update cache entry if now eligible
+          if (nowEligible) {
+            await c.env.DB.prepare(
+              'UPDATE replier_cache SET eligible = 1, conditions_json = ?, cached_at = ? WHERE gate_id = ? AND x_user_id = ?',
+            ).bind(JSON.stringify(updatedConditions), new Date().toISOString(), gateId, match.xUserId).run();
+
+            if (gate.action_type === 'verify_only' && !deliveredIds.has(match.xUserId)) {
+              await createDelivery(c.env.DB, gateId, match.xUserId, match.username, null, 'delivered');
+            }
+          }
+
+          return c.json({
+            success: true,
+            data: {
+              eligible: nowEligible,
+              alreadyDelivered: deliveredIds.has(match.xUserId),
+              conditions: updatedConditions,
+              ...(nowEligible ? {} : { message: '条件を満たしていません' }),
+            },
+          });
+        } catch {
+          // X API error — return stale cache rather than failing
+        }
+      }
+
       return c.json({
         success: true,
         data: {
-          eligible: match.eligible,
+          eligible: false,
           alreadyDelivered: deliveredIds.has(match.xUserId),
           conditions: match.conditions,
-          ...(match.eligible ? {} : { message: '条件を満たしていません' }),
+          message: '条件を満たしていません',
           cached: true,
         },
       });
