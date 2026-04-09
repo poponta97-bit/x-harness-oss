@@ -336,13 +336,37 @@ verify.get('/api/engagement-gates/:id/verify', async (c) => {
         },
       });
     }
+    // User not in cache — they may have reposted after cache was created.
+    // Refresh cache (1 API call) instead of telling user to wait.
+    const clientForRefresh = await buildXClientForGate(c.env.DB, gate);
+    if (clientForRefresh) {
+      try {
+        const fresh = await fetchAndCacheDeduped(c.env.DB, clientForRefresh.xClient, gate, clientForRefresh.account.x_user_id);
+        const freshMatch = fresh.find((r) => r.username.toLowerCase() === username.toLowerCase());
+        if (freshMatch) {
+          if (freshMatch.eligible && gate.action_type === 'verify_only' && !deliveredIds.has(freshMatch.xUserId)) {
+            await createDelivery(c.env.DB, gateId, freshMatch.xUserId, freshMatch.username, null, 'delivered');
+          }
+          return c.json({
+            success: true,
+            data: {
+              eligible: freshMatch.eligible,
+              conditions: freshMatch.conditions,
+              ...(freshMatch.eligible ? {} : { message: '条件を満たしていません' }),
+            },
+          });
+        }
+      } catch {
+        // X API error — fall through to "not found"
+      }
+    }
+
     return c.json({
       success: true,
       data: {
         eligible: false,
         conditions: { repost: false, like: null, follow: null, reply: null },
-        message: `${triggerLabel(gate.trigger_type)}が確認できません。数分後に再度お試しください。`,
-        cached: true,
+        message: `${triggerLabel(gate.trigger_type)}が確認できません`,
       },
     });
   }
