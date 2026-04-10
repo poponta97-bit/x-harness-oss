@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.1] - 2026-04-10
+
+### Fixed
+- **メディア添付がスレッド追加で消えるバグを修正** — メディアUIの表示条件を緩和、スレッドモードでも1つ目のツイートに画像添付可能に
+- **複数画像削除時のUI表示崩れを修正** — MediaFile に安定IDを追加、React key をインデックスからユニークIDに変更
+- **CLI: Node 22+ corepack 署名検証エラーを修正** — `ensurePnpm` 共通ヘルパー導入、`COREPACK_INTEGRITY_KEYS=0` フォールバック
+
 ## [0.5.0] - 2026-04-10
 
 ### Added
@@ -7,7 +14,7 @@
 - **verify 条件拡張** — repost / like / reply 各トリガーに対応、失効キャッシュからの再チェック
 - **API コストゲート** — エンドポイント別コスト計算、高コストページの自動フェッチ無効化
 - **投稿ハードデリート** — ダッシュボードからポスト済みツイートの完全削除
-- **create-x-harness CLI v0.2.3** — 3ステップ式プロンプト、英語ユースケースサンプル、LINE Harness ダッシュボード連携、corepack 署名エラー修正
+- **create-x-harness CLI v0.2.3** — 3ステップ式プロンプト、英語ユースケースサンプル、LINE Harness ダッシュボード連携
 
 ### Changed
 - デフォルトトリガーを reply → repost に変更
@@ -18,7 +25,6 @@
 - セットアップページの不要要素をクリーンアップ
 - キャンペーンのデフォルトトリガー不整合を修正
 - 投稿ページのコストゲート表示を修正
-- CLI: corepack 署名検証エラー（Node 22+）を修正 — `ensurePnpm` 共通ヘルパー導入
 - CLI: CF Pages プロジェクト suffix から apiKey prefix を除去
 - CLI: LINE Harness 接続のダッシュボード登録漏れを修正
 
